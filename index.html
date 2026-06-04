@@ -5,8 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Task 관리 캘린더</title>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <style>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>  <style>
     :root {
       --bg:#f0f2f5; --surface:#fff; --surface2:#f8f9fa; --surface3:#f0f2f5;
       --border:#e0e0e0; --border2:#f0f0f0;
@@ -196,22 +195,6 @@
     .btn-cancel { background:var(--surface); color:var(--text2); border:1px solid var(--border); border-radius:7px; padding:5px 10px; font-size:12px; cursor:pointer; font-family:inherit; }
     .btn-cancel:hover { background:var(--surface2); }
 
-    /* ─── Weather bar ─── */
-    .weather-bar {
-      border-top:1px solid var(--border2); padding:8px 10px;
-      display:flex; align-items:center; justify-content:center; gap:6px;
-      background:linear-gradient(to bottom, var(--surface), var(--surface2));
-      min-height:46px;
-    }
-    .weather-emoji { font-size:20px; }
-    .weather-info { display:flex; flex-direction:column; align-items:center; gap:1px; }
-    .weather-temp { font-size:12px; font-weight:600; }
-    .weather-temp .hi { color:var(--red); }
-    .weather-temp .lo { color:var(--primary); }
-    .weather-desc { font-size:10px; color:var(--text3); }
-    .weather-rain { font-size:10px; color:var(--primary); }
-    .weather-skeleton { font-size:11px; color:var(--text3); }
-
     /* ─── Month view ─── */
     .month-wrap { padding:16px; }
     .month-day-headers { display:grid; grid-template-columns:repeat(7,1fr); gap:2px; margin-bottom:4px; }
@@ -280,6 +263,27 @@
     .btn-primary:hover { background:var(--primary-h); }
     .btn-secondary { background:var(--surface2); color:var(--text2); border:1px solid var(--border); border-radius:8px; padding:8px 14px; font-size:13px; cursor:pointer; font-family:inherit; }
     .btn-secondary:hover { background:var(--border); }
+
+    /* ─── Day-off ─── */
+    .day-col.is-dayoff { background: color-mix(in srgb, var(--surface) 88%, var(--orange) 12%) !important; }
+    .day-col.is-dayoff .day-header { opacity:.85; }
+    .dayoff-badge { display:inline-flex; align-items:center; gap:3px; font-size:10px; font-weight:700; color:var(--orange); background:color-mix(in srgb,var(--surface) 80%,var(--orange) 20%); border-radius:6px; padding:2px 7px; margin-top:4px; }
+    .dayoff-btn {
+      width:100%; margin:4px 6px 6px; padding:4px 8px; border:1.5px dashed var(--orange);
+      border-radius:8px; background:none; font-size:11px; color:var(--orange);
+      cursor:pointer; font-family:inherit; transition:all .15s; box-sizing:border-box; width:calc(100% - 12px);
+    }
+    .dayoff-btn:hover { background:color-mix(in srgb,var(--surface) 85%,var(--orange) 15%); }
+    .dayoff-btn.active { background:color-mix(in srgb,var(--surface) 80%,var(--orange) 20%); font-weight:700; }
+    /* repeat-day input */
+    .repeat-day-input {
+      display:none; width:54px; border:1px solid var(--border); border-radius:6px;
+      padding:3px 6px; font-size:11px; font-family:inherit; outline:none;
+      background:var(--surface); color:var(--text); text-align:center;
+    }
+    .repeat-day-input.show { display:inline-block; }
+    .repeat-selector.wide { flex-wrap:wrap; }
+    .repeat-selector.wide .repeat-opt { flex:none; padding:4px 8px; }
 
     /* ─── Drag & Drop ─── */
     .task-item[draggable="true"] { cursor: grab; }
@@ -356,11 +360,6 @@
       .day-name { font-size:11px; }
       .day-num { font-size:22px; }
       .day-num-wrap { width:36px; height:36px; }
-
-      /* Weather bar */
-      .weather-bar { padding:10px; min-height:50px; }
-      .weather-emoji { font-size:24px; }
-      .weather-temp { font-size:13px; }
 
       /* Month view */
       .month-wrap { padding:8px; }
@@ -595,7 +594,6 @@
     <div class="sync-dot offline" id="syncDot" title="동기화 상태" style="display:none"></div>
     <button class="copy-url-btn" id="copyUrlBtn" style="display:none">🔗 <span>내 URL 복사</span></button>
     <button class="copy-url-btn" id="switchUserBtn" style="display:none" title="다른 사용자로 전환">↩ <span>전환</span></button>
-    <button class="icon-btn" id="locationBtn" title="내 위치 날씨">📍</button>
     <button class="icon-btn" id="darkBtn" title="다크 모드">🌙</button>
     <div class="progress-pill" id="progressInfo"></div>
   </div>
@@ -634,10 +632,16 @@
     </div>
     <div class="modal-row">
       <span class="modal-label">반복</span>
-      <div class="repeat-selector" id="editRepeatSel" style="flex:1">
-        <button class="repeat-opt" data-val="none">없음</button>
-        <button class="repeat-opt" data-val="weekly">매주</button>
-        <button class="repeat-opt" data-val="monthly">매월</button>
+      <div style="flex:1">
+        <div class="repeat-selector wide" id="editRepeatSel" style="flex:1;flex-wrap:wrap;gap:4px">
+          <button class="repeat-opt" data-val="none">없음</button>
+          <button class="repeat-opt" data-val="weekly">매주</button>
+          <button class="repeat-opt" data-val="monthly">매월 같은날</button>
+          <button class="repeat-opt" data-val="monthly-day-N">매월 N일</button>
+          <button class="repeat-opt" data-val="monthly-first-biz">매월 첫 영업일</button>
+          <button class="repeat-opt" data-val="monthly-last-biz">매월 마지막 영업일</button>
+        </div>
+        <input class="repeat-day-input" id="editRepeatDayInp" type="number" min="1" max="31" value="1" placeholder="일" style="margin-top:5px">
       </div>
     </div>
     <div class="modal-actions">
@@ -657,17 +661,20 @@
 <script>
 // ── Firebase ──
 const FB_CONFIG = {
-  apiKey: "AIzaSyC4u_IF5_UMygKI8JGt88P1yQFJg9rbSt0",
-  authDomain: "my-calendar-1a589.firebaseapp.com",
-  databaseURL: "https://my-calendar-1a589-default-rtdb.firebaseio.com",
-  projectId: "my-calendar-1a589",
-  storageBucket: "my-calendar-1a589.firebasestorage.app",
-  messagingSenderId: "75434783601",
-  appId: "1:75434783601:web:9144bb9f91f90aa4ab3cd0",
-  measurementId: "G-SDMYBKDND0"
+  apiKey: "AIzaSyBCz0YUOQzf9LuG6DL4RfeUys8RXabaurw",
+  authDomain: "work-planner-cc44f.firebaseapp.com",
+  databaseURL: "https://work-planner-cc44f-default-rtdb.firebaseio.com",
+  projectId: "work-planner-cc44f",
+  storageBucket: "work-planner-cc44f.firebasestorage.app",
+  messagingSenderId: "23304283865",
+  appId: "1:23304283865:web:bf578c0bcec5768b2400c8",
+  measurementId: "G-59MN058CDW"
 };
-firebase.initializeApp(FB_CONFIG);
-const fbDb = firebase.database();
+let fbDb = null;
+try {
+  firebase.initializeApp(FB_CONFIG);
+  fbDb = firebase.database();
+} catch(e) { console.warn('Firebase 초기화 실패, 오프라인 모드로 실행:', e); }
 let fbSaveTimer = null;
 
 function setSyncStatus(s) {
@@ -678,7 +685,7 @@ function setSyncStatus(s) {
 }
 
 function fbRef() {
-  return USER_ID && USER_ID !== 'demo' ? fbDb.ref(`users/${USER_ID}/tasks`) : null;
+  return fbDb && USER_ID && USER_ID !== 'demo' ? fbDb.ref(`users/${USER_ID}/tasks`) : null;
 }
 
 // ── Constants ──
@@ -688,9 +695,6 @@ const COLORS = [
   {hex:'#43a047',name:'초록'},{hex:'#8e24aa',name:'보라'},{hex:'#fb8c00',name:'주황'},
   {hex:'#607d8b',name:'회색'},
 ];
-const WMO = {0:'☀️',1:'🌤️',2:'⛅',3:'☁️',45:'🌫️',48:'🌫️',51:'🌦️',53:'🌦️',55:'🌦️',61:'🌧️',63:'🌧️',65:'🌧️',71:'❄️',73:'❄️',75:'❄️',77:'🌨️',80:'🌦️',81:'🌦️',82:'🌦️',85:'❄️',86:'❄️',95:'⛈️',96:'⛈️',99:'⛈️'};
-const WMO_D = {0:'맑음',1:'구름조금',2:'구름많음',3:'흐림',45:'안개',48:'안개',51:'이슬비',53:'이슬비',55:'이슬비',61:'비',63:'비',65:'강한비',71:'눈',73:'눈',75:'강한눈',77:'싸락눈',80:'소나기',81:'소나기',82:'강한소나기',85:'눈소나기',86:'눈소나기',95:'뇌우',96:'뇌우',99:'뇌우'};
-
 // ── 2026 공휴일 (대체공휴일 포함) ──
 const HOLIDAYS = {
   '2026-01-01': '신정',
@@ -717,9 +721,11 @@ const HOLIDAYS = {
   '2026-12-25': '성탄절',
 };
 function isHoliday(dk) { return !!HOLIDAYS[dk]; }
+function isDayoff(dk) { return typeof dayoffs !== 'undefined' && !!dayoffs[dk]; }
 function isRestDay(date) {
   const day = date.getDay();
-  return day === 0 || day === 6 || isHoliday(dateKey(date));
+  const dk = dateKey(date);
+  return day === 0 || day === 6 || isHoliday(dk) || isDayoff(dk);
 }
 // 휴일이면 직전 평일로 이동
 function prevWorkday(date) {
@@ -821,18 +827,6 @@ if (!USER_ID) {
   };
 }
 
-// ── State ──
-let currentView = 'week';
-let weekStart = getMonday(new Date());
-let monthDate = new Date(); monthDate.setDate(1);
-let tasks = loadTasks();
-let activeInput = null;
-let weatherByDate = {};
-let weatherLoc = {lat:37.5665,lon:126.978,name:'서울'};
-let searchQuery = '';
-let editCtx = null;
-let _editColor = null, _editStarred = false, _editRepeat = 'none';
-
 // ── Persistence ──
 function loadTasks() {
   try {
@@ -844,19 +838,58 @@ function loadTasks() {
   } catch { return {}; }
 }
 
+// ── Day-off persistence ──
+const DAYOFF_KEY = (USER_ID||'anon') + '_dayoffs';
+function loadDayoffs() {
+  try { return JSON.parse(localStorage.getItem(DAYOFF_KEY) || '{}'); } catch { return {}; }
+}
+function saveDayoffs() {
+  localStorage.setItem(DAYOFF_KEY, JSON.stringify(dayoffs));
+}
+
+// ── State ──
+let currentView = 'week';
+let weekStart = getMonday(new Date());
+let monthDate = new Date(); monthDate.setDate(1);
+let tasks = loadTasks();
+let dayoffs = loadDayoffs();
+let activeInput = null;
+let searchQuery = '';
+let editCtx = null;
+let _editColor = null, _editStarred = false, _editRepeat = 'none';
+
 function saveTasks() {
-  // Always write to localStorage immediately (offline cache)
   localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
   const ref = fbRef();
   if (!ref) return;
   setSyncStatus('syncing');
-  // Debounce Firebase writes (300ms) to avoid hammering on rapid edits
   clearTimeout(fbSaveTimer);
   fbSaveTimer = setTimeout(() => {
     ref.set(tasks)
       .then(() => setSyncStatus('synced'))
       .catch(() => setSyncStatus('offline'));
   }, 300);
+}
+
+// 휴무 토글: 지정하면 그날 업무를 전날로 이동, 해제하면 되돌리지 않음(수동 관리)
+function toggleDayoff(dk) {
+  if (dayoffs[dk]) {
+    delete dayoffs[dk];
+    saveDayoffs();
+    render();
+    return;
+  }
+  // 휴무 지정 — 해당 날 업무를 전날로 이동
+  const prevDk = dateKey(prevWorkday(new Date(dk)));
+  if (tasks[dk] && tasks[dk].length > 0) {
+    if (!tasks[prevDk]) tasks[prevDk] = [];
+    tasks[prevDk].push(...tasks[dk]);
+    tasks[dk] = [];
+    saveTasks();
+  }
+  dayoffs[dk] = true;
+  saveDayoffs();
+  render();
 }
 
 function initFirebaseSync() {
@@ -889,6 +922,19 @@ function today() { const d=new Date(); d.setHours(0,0,0,0); return d; }
 function dateToDayIdx(d) { const day=new Date(d).getDay(); return day===0?6:day-1; }
 
 // ── Repeat helpers ──
+// 해당 월의 첫 영업일
+function firstBizDay(year, month) {
+  let d = new Date(year, month, 1);
+  while (isRestDay(d)) d.setDate(d.getDate() + 1);
+  return d;
+}
+// 해당 월의 마지막 영업일
+function lastBizDay(year, month) {
+  let d = new Date(year, month + 1, 0);
+  while (isRestDay(d)) d.setDate(d.getDate() - 1);
+  return d;
+}
+
 function getRepeatTasksForDate(date, dayIdx) {
   const dk = dateKey(date);
   const out = [];
@@ -897,24 +943,34 @@ function getRepeatTasksForDate(date, dayIdx) {
     list.forEach(t => {
       if (!t.repeat||t.repeat==='none') return;
       if (t.repeat==='weekly') {
-        // 원래 요일이 주말/공휴일이면 직전 평일로 이동
-        const originDate = new Date(oDk);
-        let targetDate = new Date(date);
-        // 이번 주에서 원래 요일과 같은 날 구하기
-        const originDayIdx = dateToDayIdx(oDk); // 원래 요일 (0=월~6=일)
+        const originDayIdx = dateToDayIdx(oDk);
         const diff = originDayIdx - dayIdx;
+        let targetDate = new Date(date);
         targetDate.setDate(targetDate.getDate() + diff);
-        // 주말/공휴일이면 직전 평일로 이동
         const adjusted = isRestDay(targetDate);
         if (adjusted) targetDate = prevWorkday(targetDate);
-        if (dateKey(targetDate) === dk) {
-          out.push({task:t, originDk:oDk, instanceDk:dk, adjusted});
-        }
+        if (dateKey(targetDate) === dk) out.push({task:t, originDk:oDk, instanceDk:dk, adjusted});
       }
       if (t.repeat==='monthly') {
         const originDay = new Date(oDk).getDate();
         const adj = adjustedMonthlyDate(date.getFullYear(), date.getMonth(), originDay);
         if (adj && dateKey(adj) === dk) out.push({task:t, originDk:oDk, instanceDk:dk, adjusted: adj.getDate()!==originDay});
+      }
+      // 매월 N일 (monthly-N)
+      if (t.repeat && t.repeat.startsWith('monthly-day-')) {
+        const n = parseInt(t.repeat.split('monthly-day-')[1], 10);
+        const adj = adjustedMonthlyDate(date.getFullYear(), date.getMonth(), n);
+        if (adj && dateKey(adj) === dk) out.push({task:t, originDk:oDk, instanceDk:dk, adjusted: adj.getDate()!==n});
+      }
+      // 매월 첫 영업일
+      if (t.repeat==='monthly-first-biz') {
+        const first = firstBizDay(date.getFullYear(), date.getMonth());
+        if (dateKey(first) === dk) out.push({task:t, originDk:oDk, instanceDk:dk, adjusted:false});
+      }
+      // 매월 마지막 영업일
+      if (t.repeat==='monthly-last-biz') {
+        const last = lastBizDay(date.getFullYear(), date.getMonth());
+        if (dateKey(last) === dk) out.push({task:t, originDk:oDk, instanceDk:dk, adjusted:false});
       }
     });
   });
@@ -982,9 +1038,16 @@ function openEdit(dk,task,isRepeatInst,originDk) {
   cp.querySelectorAll('.cp-dot').forEach(d=>{
     d.classList.toggle('selected',(d.dataset.color||'')===(targetTask.color||''));
   });
-  // Repeat
+  // Repeat — handle monthly-day-N
+  const editDayInp = document.getElementById('editRepeatDayInp');
+  let curRepeatBase = _editRepeat;
+  if (_editRepeat && _editRepeat.startsWith('monthly-day-')) {
+    const n = _editRepeat.split('monthly-day-')[1];
+    editDayInp.value = n; editDayInp.classList.add('show');
+    curRepeatBase = 'monthly-day-N';
+  } else { editDayInp.classList.remove('show'); }
   document.querySelectorAll('#editRepeatSel .repeat-opt').forEach(b=>{
-    b.classList.toggle('active',b.dataset.val===_editRepeat);
+    b.classList.toggle('active', b.dataset.val === curRepeatBase);
   });
   document.getElementById('editInput').value=targetTask.text;
   document.getElementById('editModal').classList.remove('hidden');
@@ -996,10 +1059,19 @@ document.getElementById('editStarBtn').onclick=function(){
 };
 document.querySelectorAll('#editRepeatSel .repeat-opt').forEach(b=>{
   b.onclick=()=>{
-    _editRepeat=b.dataset.val;
+    const editDayInp2 = document.getElementById('editRepeatDayInp');
+    if(b.dataset.val==='monthly-day-N'){
+      _editRepeat='monthly-day-'+(parseInt(editDayInp2.value)||1);
+      editDayInp2.classList.add('show'); editDayInp2.focus();
+    } else {
+      _editRepeat=b.dataset.val; editDayInp2.classList.remove('show');
+    }
     document.querySelectorAll('#editRepeatSel .repeat-opt').forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
   };
+});
+document.getElementById('editRepeatDayInp').addEventListener('input', function(){
+  _editRepeat='monthly-day-'+Math.max(1,Math.min(31,parseInt(this.value)||1));
 });
 document.getElementById('editSaveBtn').onclick=()=>{
   if(!editCtx)return;
@@ -1080,27 +1152,6 @@ document.getElementById('memoTextarea').addEventListener('input', ()=>{
 document.getElementById('memoClose').onclick = closeMemo;
 document.getElementById('memoOverlay').onclick = e=>{ if(e.target===document.getElementById('memoOverlay')) closeMemo(); };
 
-// ── Weather ──
-async function fetchWeather(lat,lon) {
-  try {
-    const r=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min,weathercode,precipitation_probability_max&timezone=auto&forecast_days=16`);
-    const d=await r.json();
-    (d.daily.time||[]).forEach((dt,i)=>{
-      const code=d.daily.weathercode[i]??0;
-      weatherByDate[dt]={emoji:WMO[code]||'🌡️',desc:WMO_D[code]||'',max:Math.round(d.daily.temperature_2m_max[i]),min:Math.round(d.daily.temperature_2m_min[i]),rain:d.daily.precipitation_probability_max[i]??0};
-    });
-    render();
-  } catch(e){console.warn('날씨 로드 실패',e);}
-}
-document.getElementById('locationBtn').onclick=()=>{
-  if(!navigator.geolocation)return;
-  navigator.geolocation.getCurrentPosition(p=>{
-    weatherLoc={lat:p.coords.latitude,lon:p.coords.longitude,name:'내 위치'};
-    document.getElementById('locationBtn').textContent='📍';
-    fetchWeather(weatherLoc.lat,weatherLoc.lon);
-  },()=>fetchWeather(weatherLoc.lat,weatherLoc.lon));
-};
-
 // ── DOM helper ──
 function el(tag,cls,attrs){const e=document.createElement(tag);if(cls)e.className=cls;if(attrs)Object.assign(e,attrs);return e;}
 
@@ -1154,7 +1205,11 @@ function buildTaskItem(dk,task,isSub,parentId,isRepeatInst,originDk,instanceDk,a
   }
   body.appendChild(textWrap);
   if(!isSub&&task.repeat&&task.repeat!=='none'){
-    body.appendChild(el('div','repeat-badge',{textContent:task.repeat==='weekly'?'🔄 매주':'🔄 매월'}));
+    const repeatLabels = {'weekly':'매주','monthly':'매월','monthly-first-biz':'매월 첫영업일','monthly-last-biz':'매월 말영업일'};
+    const repeatLabel = task.repeat.startsWith('monthly-day-')
+      ? `매월 ${task.repeat.split('monthly-day-')[1]}일`
+      : (repeatLabels[task.repeat]||task.repeat);
+    body.appendChild(el('div','repeat-badge',{textContent:'🔄 '+repeatLabel}));
   }
   if(!isSub&&adjusted){
     body.appendChild(el('div','repeat-adjusted-badge',{textContent:'📅 일정 앞당김'}));
@@ -1215,12 +1270,26 @@ function buildInputForm(dk,parentId){
       cp.appendChild(dot);
     });
     form.appendChild(cp);
-    const rs=el('div','repeat-selector');
-    [['none','없음'],['weekly','매주'],['monthly','매월']].forEach(([val,label])=>{
+    const rs=el('div','repeat-selector wide');
+    let selRepeatDay = 1; // for monthly-day-N
+    const repeatOpts = [
+      ['none','없음'],['weekly','매주'],['monthly','매월 같은날'],
+      ['monthly-day-N','매월 N일'],['monthly-first-biz','매월 첫 영업일'],['monthly-last-biz','매월 마지막 영업일']
+    ];
+    const dayInp = el('input','repeat-day-input');
+    dayInp.type='number'; dayInp.min='1'; dayInp.max='31'; dayInp.value='1'; dayInp.placeholder='일';
+    dayInp.addEventListener('click', e=>e.stopPropagation());
+    dayInp.addEventListener('input', ()=>{ selRepeatDay=Math.max(1,Math.min(31,parseInt(dayInp.value)||1)); selRepeat='monthly-day-'+selRepeatDay; });
+    repeatOpts.forEach(([val,label])=>{
       const btn=el('button',`repeat-opt${val==='none'?' active':''}`,{type:'button',textContent:label});
-      btn.onclick=()=>{selRepeat=val;rs.querySelectorAll('.repeat-opt').forEach(b=>b.classList.remove('active'));btn.classList.add('active');};
+      btn.onclick=()=>{
+        if(val==='monthly-day-N'){ selRepeat='monthly-day-'+selRepeatDay; dayInp.classList.add('show'); dayInp.focus(); }
+        else { selRepeat=val; dayInp.classList.remove('show'); }
+        rs.querySelectorAll('.repeat-opt').forEach(b=>b.classList.remove('active')); btn.classList.add('active');
+      };
       rs.appendChild(btn);
     });
+    rs.appendChild(dayInp);
     form.appendChild(rs);
   }
   const acts=el('div','form-actions');
@@ -1233,31 +1302,14 @@ function buildInputForm(dk,parentId){
   return form;
 }
 
-// ── Weather bar ──
-function buildWeatherBar(dk){
-  const bar=el('div','weather-bar');
-  const w=weatherByDate[dk];
-  if(!w)bar.appendChild(el('span','weather-skeleton',{textContent:'날씨 로드 중...'}));
-  else{
-    bar.appendChild(el('span','weather-emoji',{textContent:w.emoji}));
-    const info=el('div','weather-info');
-    const temp=el('div','weather-temp');
-    temp.innerHTML=`<span class="hi">${w.max}°</span> / <span class="lo">${w.min}°</span>`;
-    info.appendChild(temp);
-    info.appendChild(el('div','weather-desc',{textContent:w.desc}));
-    if(w.rain>0)info.appendChild(el('div','weather-rain',{textContent:`💧 ${w.rain}%`}));
-    bar.appendChild(info);
-  }
-  return bar;
-}
-
 // ── Day column ──
 function buildDayCol(date,dayIdx){
   const dk=dateKey(date);
   const isToday=date.getTime()===today().getTime();
   const isWeekend=dayIdx>=5;
   const holiday=HOLIDAYS[dk];
-  const col=el('div',`day-col${isToday?' is-today':''}${isWeekend?' is-weekend':''}${holiday?' is-holiday':''}`);
+  const isDayoffDay = isDayoff(dk);
+  const col=el('div',`day-col${isToday?' is-today':''}${isWeekend?' is-weekend':''}${holiday?' is-holiday':''}${isDayoffDay?' is-dayoff':''}`);
   col.addEventListener('dragover', e => { if(!dragState||dragState.originDk===dk) return; e.preventDefault(); col.classList.add('drag-over'); });
   col.addEventListener('dragleave', e => { if(!col.contains(e.relatedTarget)) col.classList.remove('drag-over'); });
   col.addEventListener('drop', e => { e.preventDefault(); col.classList.remove('drag-over'); if(!dragState||dragState.originDk===dk) return; moveTask(dragState.originDk,dragState.taskId,dk); });
@@ -1269,6 +1321,7 @@ function buildDayCol(date,dayIdx){
   hdr.appendChild(nw);
   hdr.appendChild(el('div','day-month',{textContent:`${date.getMonth()+1}월`}));
   if(holiday) hdr.appendChild(el('div','holiday-label',{textContent:'🎌 '+holiday}));
+  if(isDayoffDay) hdr.appendChild(el('div','dayoff-badge',{textContent:'🏖️ 휴무'}));
   // task count + mini progress
   const dayTasks=tasks[dk]||[];
   const allTasks=[...dayTasks];
@@ -1307,7 +1360,10 @@ function buildDayCol(date,dayIdx){
     addBtn.onclick=()=>{activeInput={dateKey:dk,parentId:null};render();};
     col.appendChild(addBtn);
   }
-  col.appendChild(buildWeatherBar(dk));
+  // 휴무 지정 버튼
+  const dayoffBtn=el('button',`dayoff-btn${isDayoffDay?' active':''}`,{textContent: isDayoffDay?'🏖️ 휴무 해제':'🏖️ 휴무 지정'});
+  dayoffBtn.onclick=()=>toggleDayoff(dk);
+  col.appendChild(dayoffBtn);
   return col;
 }
 
@@ -1506,7 +1562,6 @@ document.addEventListener('keydown',e=>{
 
 // ── Init ──
 render();
-fetchWeather(weatherLoc.lat,weatherLoc.lon);
 initFirebaseSync();
 </script>
 </body>
