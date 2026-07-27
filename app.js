@@ -6285,6 +6285,7 @@ function getImportantUpcoming(){
 
 function buildDashStats(){
   const panel = document.getElementById('dashStats');
+  if(!panel) return;
   panel.innerHTML = '';
   const title = document.createElement('div'); title.className='dash-panel-title'; title.innerHTML='<svg class="ic" width="13" height="13"><use href="#i-gantt"/></svg> 이번 주 업무 현황';
   panel.appendChild(title);
@@ -6435,6 +6436,7 @@ function getSheetEvents(){
 
 function buildDashCalendar(){
   const panel = document.getElementById('dashCalendar');
+  if(!panel) return;
   panel.innerHTML = '';
 
   // ── 완료 통계 & 예정 ──
@@ -6713,6 +6715,7 @@ function checkMondaySync(){
 }
 
 function appendSheetSyncRow(panel){
+  if(!panel) return;
   // '지금 가져오기' 버튼 제거됨 — 기존에 그려진 행이 있으면 정리만 함
   const old=panel.querySelector('.sheet-sync-row');
   if(old) old.remove();
