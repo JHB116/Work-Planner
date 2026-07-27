@@ -3346,6 +3346,39 @@ document.getElementById('nextBtn').onclick=()=>{
   else if(currentView==='year')yearNum++;
   _navDir='next'; render();
 };
+
+// ── 주간 뷰: 태스크를 이전/다음 주 버튼(‹ ›)에 드롭 → 같은 요일 기준 ±7일 이동 ──
+function _weekNavDrop(e, weekDelta){
+  e.preventDefault();
+  const btn=e.currentTarget; if(btn) btn.classList.remove('drag-over');
+  if(currentView!=='week' || READ_ONLY) return;
+  let data; try{ data=JSON.parse(e.dataTransfer.getData('application/json')); }catch(_){ return; }
+  if(!data || !data.id || data.sub) return;                 // 하위 태스크 드롭은 무시
+  const srcDk = data.isRepeat ? data.instanceDk : data.dk;  // 화면에 보이는 날짜 기준
+  if(!srcDk) return;
+  const d=parseDk(srcDk); d.setDate(d.getDate() + weekDelta*7);
+  const toDk=dateKey(d);
+  if(data.isRepeat){
+    askRepeatMoveScope(scope=>{
+      if(scope==='one') moveRepeatInstanceOne(data.dk, data.id, data.instanceDk, toDk);
+      else if(scope==='all') moveTask(data.dk, data.id, toDk);
+    });
+  } else {
+    moveTask(data.dk, data.id, toDk);
+  }
+}
+['prevBtn','nextBtn'].forEach(id=>{
+  const b=document.getElementById(id); if(!b) return;
+  const delta = (id==='prevBtn') ? -1 : 1;
+  b.addEventListener('dragover', e=>{
+    if(currentView!=='week') return;
+    const types=[...(e.dataTransfer&&e.dataTransfer.types||[])];
+    if(!types.includes('application/json')) return;         // 태스크 드래그일 때만 드롭 허용
+    e.preventDefault(); e.dataTransfer.dropEffect='move'; b.classList.add('drag-over');
+  });
+  b.addEventListener('dragleave', ()=>b.classList.remove('drag-over'));
+  b.addEventListener('drop', e=>_weekNavDrop(e, delta));
+});
 document.getElementById('todayBtn').onclick=()=>{
   weekStart=getMonday(new Date()); monthDate=new Date(); monthDate.setDate(1);
   dayDate=today(); yearNum=new Date().getFullYear(); render();
