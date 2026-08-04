@@ -618,12 +618,36 @@ function openRepeatDel(originDk, taskId, shownDk) {
   repeatDelCtx = {originDk, taskId, shownDk};
   const t = (tasks[originDk]||[]).find(x => x.id === taskId);
   document.getElementById('repeatDelText').textContent =
-    `"${t?t.text:''}" — 이 날짜(${shownDk})에서만 지울까요, 반복 전체를 지울까요?`;
+    `"${t?t.text:''}" — 반복 일정을 어떻게 삭제할까요? (선택한 날짜: ${shownDk})`;
   document.getElementById('repeatDelModal').classList.remove('hidden');
 }
 function closeRepeatDel(){ document.getElementById('repeatDelModal').classList.add('hidden'); repeatDelCtx=null; }
+// 이번 회차부터 이후 반복만 삭제 (과거 회차는 유지) — repeatEnd를 '선택일 하루 전'으로 설정
+function deleteRepeatFromHere(originDk, taskId, shownDk){
+  if(READ_ONLY) return;
+  const t=(tasks[originDk]||[]).find(x=>x.id===taskId);
+  if(!t) return;
+  // 선택한 날짜가 원본(첫 회차)이면 이후 전부 = 반복 전체 삭제
+  if(shownDk<=originDk){ deleteTask(originDk, taskId, null); return; }
+  const prevEnd=t.repeatEnd||null;
+  const d=parseDk(shownDk); d.setDate(d.getDate()-1);
+  const proposed=dateKey(d);
+  // 이미 더 이른 종료일이 있으면 그대로(뒤로 늘리지 않음)
+  const applied=(prevEnd && prevEnd<proposed)?prevEnd:proposed;
+  t.repeatEnd=applied;
+  saveTasks(originDk); render();
+  const sd=parseDk(shownDk);
+  showUndoToast(`${sd.getMonth()+1}/${sd.getDate()}부터 이후 반복을 삭제했어요 (이전 일정은 유지)`, ()=>{
+    const tt=(tasks[originDk]||[]).find(x=>x.id===taskId);
+    if(tt){ tt.repeatEnd=prevEnd; saveTasks(originDk); render(); }
+  });
+}
 document.getElementById('repeatDelOnce').onclick=()=>{
   if(repeatDelCtx) skipRepeatInstance(repeatDelCtx.originDk, repeatDelCtx.taskId, repeatDelCtx.shownDk);
+  closeRepeatDel();
+};
+document.getElementById('repeatDelFuture').onclick=()=>{
+  if(repeatDelCtx) deleteRepeatFromHere(repeatDelCtx.originDk, repeatDelCtx.taskId, repeatDelCtx.shownDk);
   closeRepeatDel();
 };
 document.getElementById('repeatDelAll').onclick=()=>{
