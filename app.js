@@ -964,7 +964,6 @@ function addTask(dk,text,color,starred,repeat,parentId,priority,time) {
 
 // ── Task sort: 중요 → 마감시간순 → 시간 없는 항목 ──
 function taskSort(a,b){
-  const s=(b.starred?1:0)-(a.starred?1:0); if(s)return s;
   if(a.time&&b.time)return a.time<b.time?-1:a.time>b.time?1:0;
   if(a.time)return -1;
   if(b.time)return 1;
@@ -1324,7 +1323,7 @@ function openMovePopup(anchor, fromDk, taskId, repCtx){
 
 // ── Edit modal ──
 function buildEditColors() {
-  const cp = document.getElementById('editColors'); cp.innerHTML='';
+  const cp = document.getElementById('editColors'); if(!cp) return; cp.innerHTML='';
   const none=el('div','cp-dot selected');
   none.style.background='#e8eaed'; none.title='없음'; none.dataset.color='';
   none.onclick=()=>{_editColor=null;cp.querySelectorAll('.cp-dot').forEach(d=>d.classList.remove('selected'));none.classList.add('selected');};
@@ -1345,10 +1344,10 @@ function openEdit(dk,task,isRepeatInst,originDk) {
   buildEditColors();
   // Set star
   const starBtn=document.getElementById('editStarBtn');
-  starBtn.classList.toggle('on',_editStarred);
+  if(starBtn) starBtn.classList.toggle('on',_editStarred);
   // Highlight current color
   const cp=document.getElementById('editColors');
-  cp.querySelectorAll('.cp-dot').forEach(d=>{
+  if(cp) cp.querySelectorAll('.cp-dot').forEach(d=>{
     d.classList.toggle('selected',(d.dataset.color||'')===(targetTask.color||''));
   });
   // Priority
@@ -1367,7 +1366,8 @@ function openEdit(dk,task,isRepeatInst,originDk) {
   setTimeout(()=>{const inp=document.getElementById('editInput');inp.focus();inp.select();},50);
 }
 function closeEdit() { document.getElementById('editModal').classList.add('hidden'); editCtx=null; }
-document.getElementById('editStarBtn').onclick=function(){
+const _editStarBtnEl=document.getElementById('editStarBtn');
+if(_editStarBtnEl) _editStarBtnEl.onclick=function(){
   _editStarred=!_editStarred; this.classList.toggle('on',_editStarred);
 };
 document.querySelectorAll('#editRepeatSel .repeat-opt').forEach(b=>{
@@ -2459,37 +2459,8 @@ function buildInputForm(dk,parentId){
   const inp=el('input','task-input');
   inp.type='text';inp.placeholder=parentId?'할 일 입력...':'할 일 입력... (예: 내일 3시 회의)';inp.id=`inp-${dk}-${parentId||'main'}`;
   row.appendChild(inp);
-  if(!parentId){
-    const sb=el('button','star-toggle',{type:'button',textContent:'★'});
-    sb.onclick=()=>{starred=!starred;sb.classList.toggle('on',starred);};
-    row.appendChild(sb);
-  }
   form.appendChild(row);
   if(!parentId){
-    const cp=el('div','color-picker');
-    const none=el('div','cp-dot selected');none.style.background='#e8eaed';none.title='없음';
-    none.onclick=()=>{selColor=null;cp.querySelectorAll('.cp-dot').forEach(d=>d.classList.remove('selected'));none.classList.add('selected');};
-    cp.appendChild(none);
-    COLORS.forEach(c=>{
-      const dot=el('div','cp-dot');dot.style.background=c.hex;dot.title=c.name;
-      dot.onclick=()=>{selColor=c.hex;cp.querySelectorAll('.cp-dot').forEach(d=>d.classList.remove('selected'));dot.classList.add('selected');};
-      cp.appendChild(dot);
-    });
-    form.appendChild(cp);
-    const psRow=el('div','add-field-row');
-    psRow.appendChild(el('span','add-field-label',{textContent:'중요도'}));
-    const ps=el('div','priority-selector');
-    [['high','🔴'],['mid','🟡'],['low','🟢']].forEach(([val,icon])=>{
-      const btn=el('button','priority-opt',{type:'button',textContent:icon,title:val});
-      btn.onclick=()=>{
-        selPriority=selPriority===val?null:val;
-        ps.querySelectorAll('.priority-opt').forEach(b=>b.classList.remove('active'));
-        if(selPriority)btn.classList.add('active');
-      };
-      ps.appendChild(btn);
-    });
-    psRow.appendChild(ps);
-    form.appendChild(psRow);
     const rs=el('div','repeat-selector');
     [['none','없음'],['daily','매일'],['weekdays','평일'],['weekly','매주'],['biweekly','격주'],['monthly','매월'],['monthlyNth','N째요일'],['monthlyFirstBiz','월초영업일'],['monthlyLastBiz','월말영업일']].forEach(([val,label])=>{
       const btn=el('button',`repeat-opt${val==='none'?' active':''}`,{type:'button',textContent:label});

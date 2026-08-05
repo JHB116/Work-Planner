@@ -714,6 +714,9 @@
     .day-log-add:hover { color:var(--primary); border-color:var(--primary); }
     .day-log-form { display:flex; }
     .day-log-input { flex:1; border:1px solid var(--primary); border-radius:8px; padding:4px 8px; font-size:12px; font-family:inherit; background:var(--surface); color:var(--text); outline:none; }
+    /* 별표 / 컬러 / 중요도 기능 제거 — 표시 숨김 */
+    .task-star, .color-dot, .priority-flag { display:none !important; }
+    .task-item.prio-high, .task-item.prio-mid, .task-item.prio-low { background:none !important; box-shadow:none !important; }
     .stat-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:16px; }
     .stat-box { background:var(--surface2); border-radius:10px; padding:12px 10px; text-align:center; }
     .stat-num { font-size:22px; font-weight:800; color:var(--primary); line-height:1; }
