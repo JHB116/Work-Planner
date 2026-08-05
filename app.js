@@ -272,7 +272,7 @@ function buildDayLogs(dk){
   const logs=Array.isArray(dayLogs[dk])?dayLogs[dk]:[];
   logs.forEach((text,i)=>{
     const row=el('div','day-log-item');
-    row.appendChild(el('span','day-log-dot',{textContent:'·'}));
+    row.appendChild(el('span','day-log-dot',{textContent:'📌'}));
     row.appendChild(el('span','day-log-text',{textContent:text}));
     if(!READ_ONLY){
       const del=el('button','day-log-del',{type:'button',textContent:'×',title:'기록 삭제'});
