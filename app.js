@@ -205,6 +205,102 @@ function initOffSync() {
 const READ_ONLY = URL_PARAMS.get('ro') === '1';
 if (READ_ONLY) document.documentElement.classList.add('readonly-mode');
 
+// ── 날짜별 기록 (체크박스 없는 메모 — 점심약속/연차 등, 기기 간 동기화) ──
+const DAYLOG_KEY = USER_ID ? `calDayLogs_${USER_ID}` : 'calDayLogs';
+function _normDayLogs(o){
+  const out={};
+  if(o && typeof o==='object'){
+    Object.keys(o).forEach(k=>{
+      const v=o[k];
+      let arr=null;
+      if(Array.isArray(v)) arr=v;
+      else if(v && typeof v==='object') arr=Object.values(v);   // Firebase가 배열을 객체로 돌려주는 경우
+      else if(typeof v==='string') arr=[v];
+      if(arr){ const a=arr.filter(x=>typeof x==='string' && x.trim()); if(a.length) out[k]=a; }
+    });
+  }
+  return out;
+}
+let dayLogs = (() => { try { return _normDayLogs(JSON.parse(localStorage.getItem(DAYLOG_KEY) || '{}')); } catch { return {}; } })();
+let dayLogSaveTimer = null, pendingDayLogLocal = false;
+function dayLogFbRef() { return FB_UID && USER_ID !== 'demo' && fbDb ? fbDb.ref(`users/${FB_UID}/daylogs`) : null; }
+function saveDayLogs() {
+  if (READ_ONLY) return;
+  localStorage.setItem(DAYLOG_KEY, JSON.stringify(dayLogs));
+  const ref = dayLogFbRef(); if (!ref) return;
+  pendingDayLogLocal = true;
+  clearTimeout(dayLogSaveTimer);
+  dayLogSaveTimer = setTimeout(() => {
+    dayLogSaveTimer = null;
+    ref.set(Object.keys(dayLogs).length ? fbClean(dayLogs) : null)
+      .then(() => { pendingDayLogLocal = false; _pendingCollections.delete('daylogs'); })
+      .catch((e) => { console.warn('Firebase 저장 실패(daylogs):', e); _pendingCollections.add('daylogs'); });
+  }, 300);
+}
+function initDayLogSync() {
+  const ref = dayLogFbRef(); if (!ref) return;
+  ref.on('value', snap => {
+    if (pendingDayLogLocal) return;
+    dayLogs = _normDayLogs(snap.val());
+    localStorage.setItem(DAYLOG_KEY, JSON.stringify(dayLogs));
+    render();
+  }, () => {});
+}
+function addDayLog(dk, text){
+  if(READ_ONLY) return;
+  const v=(text||'').trim(); if(!v) return;
+  if(!Array.isArray(dayLogs[dk])) dayLogs[dk]=[];
+  dayLogs[dk].push(v);
+  activeLogInput=null;
+  saveDayLogs(); render();
+}
+function removeDayLog(dk, i){
+  if(READ_ONLY) return;
+  if(!Array.isArray(dayLogs[dk])) return;
+  const removed=dayLogs[dk].splice(i,1)[0];
+  if(!dayLogs[dk].length) delete dayLogs[dk];
+  saveDayLogs(); render();
+  showUndoToast(`기록 삭제 — "${(removed||'').slice(0,16)}"`, ()=>{
+    if(!Array.isArray(dayLogs[dk])) dayLogs[dk]=[];
+    dayLogs[dk].splice(Math.min(i,dayLogs[dk].length),0,removed);
+    saveDayLogs(); render();
+  });
+}
+// 체크박스 없는 '기록' 란 (날짜 칸 하단)
+function buildDayLogs(dk){
+  const wrap=el('div','day-logs');
+  const logs=Array.isArray(dayLogs[dk])?dayLogs[dk]:[];
+  logs.forEach((text,i)=>{
+    const row=el('div','day-log-item');
+    row.appendChild(el('span','day-log-dot',{textContent:'·'}));
+    row.appendChild(el('span','day-log-text',{textContent:text}));
+    if(!READ_ONLY){
+      const del=el('button','day-log-del',{type:'button',textContent:'×',title:'기록 삭제'});
+      del.onclick=e=>{ e.stopPropagation(); removeDayLog(dk,i); };
+      row.appendChild(del);
+    }
+    wrap.appendChild(row);
+  });
+  if(READ_ONLY) return wrap;
+  if(activeLogInput===dk){
+    const form=el('form','day-log-form');
+    const input=el('input','day-log-input',{type:'text',placeholder:'예: 점심약속 · 김대리 연차'});
+    let done=false;
+    const commit=()=>{ if(done)return; done=true; const v=input.value.trim(); if(v) addDayLog(dk,v); else { activeLogInput=null; render(); } };
+    form.appendChild(input);
+    form.onsubmit=e=>{ e.preventDefault(); commit(); };
+    input.onblur=commit;
+    input.onkeydown=e=>{ if(e.key==='Escape'){ done=true; activeLogInput=null; render(); } };
+    wrap.appendChild(form);
+    setTimeout(()=>{ try{ input.focus(); }catch(_){} },0);
+  } else {
+    const add=el('button','day-log-add',{type:'button',innerHTML:'✎ 기록 추가'});
+    add.onclick=()=>{ activeLogInput=dk; render(); };
+    wrap.appendChild(add);
+  }
+  return wrap;
+}
+
 // ── Landing page ──
 if (!USER_ID) {
   // Auto-redirect to last used user if they've been here before
@@ -309,6 +405,7 @@ let dayDate = today();
 let yearNum = new Date().getFullYear();
 let tasks = loadTasks();
 let activeInput = null;
+let activeLogInput = null;   // 날짜별 '기록' 입력창이 열린 dk
 let justToggledCb = null;   // 방금 토글한 체크박스만 팝 애니메이션 (재렌더 시 전체 팝 버그 방지)
 let _justDoneId = null;
 let _lastRenderedView = null;  // 뷰 종류가 바뀔 때만 전환 애니메이션 (체크 토글 재렌더엔 미적용)
@@ -2629,6 +2726,7 @@ function buildDayCol(date,dayIdx){
     addBtn.onclick=()=>{activeInput={dateKey:dk,parentId:null};render();};
     col.appendChild(addBtn);
   }
+  col.appendChild(buildDayLogs(dk));
   col.appendChild(buildWeatherBar(dk));
   return col;
 }
@@ -6251,6 +6349,7 @@ initFirebaseSync();
 renderNoteWins();
 initMemoSync();
 initOffSync();
+initDayLogSync();
 // (구독 팀 동기화는 initFirebaseSync에서 개인 트리 로드 후 호출됨)
 initShareSync();
 registerUserDirectory();
@@ -6814,6 +6913,7 @@ function collectAllData() {
     _app: 'myplanner', _v: 1, _exported: new Date().toISOString(), user: USER_ID || null,
     tasks: tasks,
     offDays: (typeof offDays !== 'undefined' ? offDays : {}),
+    dayLogs: (typeof dayLogs !== 'undefined' ? dayLogs : {}),
     memos: (typeof memos !== 'undefined' ? memos : {}),
     shares: (typeof shares !== 'undefined' ? shares : {}),
     goals: (typeof goals !== 'undefined' ? goals : []),
@@ -6862,6 +6962,7 @@ function importAllData(file) {
     tasks = normalizeTasks(data.tasks);
     if (typeof saveTasks === 'function') saveTasks();
     if (data.offDays && typeof offDays !== 'undefined') { offDays = data.offDays; saveOffDays(); }
+    if (data.dayLogs && typeof dayLogs !== 'undefined') { dayLogs = _normDayLogs(data.dayLogs); saveDayLogs(); }
     if (data.memos && typeof memos !== 'undefined') { memos = data.memos; saveMemos(); }
     if (data.shares && typeof shares !== 'undefined') { shares = data.shares; saveShares(); }
     if (data.goals && typeof goals !== 'undefined') { goals = data.goals; saveGoals(); }

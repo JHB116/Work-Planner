@@ -702,6 +702,18 @@
     @media(min-width:769px){ .dashboard { display:grid; } }
     .dash-panel { background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:22px 24px; }
     .dash-panel-title { font-size:14px; font-weight:700; color:var(--text2); letter-spacing:.2px; margin-bottom:14px; }
+    /* 날짜별 기록 (체크박스 없는 메모) */
+    .day-logs { margin-top:8px; padding-top:8px; border-top:1px dashed var(--border); display:flex; flex-direction:column; gap:4px; }
+    .day-log-item { display:flex; align-items:flex-start; gap:5px; font-size:12px; color:var(--text2); line-height:1.45; }
+    .day-log-dot { color:var(--primary); font-weight:800; line-height:1.35; }
+    .day-log-text { flex:1; word-break:break-word; white-space:pre-wrap; }
+    .day-log-del { border:none; background:none; color:var(--text3); cursor:pointer; font-size:15px; line-height:1; padding:0 2px; opacity:0; transition:opacity .15s; }
+    .day-log-item:hover .day-log-del { opacity:1; }
+    .day-log-del:hover { color:var(--red); }
+    .day-log-add { border:1px dashed var(--border); background:none; color:var(--text3); border-radius:8px; padding:3px 9px; font-size:11px; cursor:pointer; font-family:inherit; align-self:flex-start; transition:.15s; }
+    .day-log-add:hover { color:var(--primary); border-color:var(--primary); }
+    .day-log-form { display:flex; }
+    .day-log-input { flex:1; border:1px solid var(--primary); border-radius:8px; padding:4px 8px; font-size:12px; font-family:inherit; background:var(--surface); color:var(--text); outline:none; }
     .stat-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:16px; }
     .stat-box { background:var(--surface2); border-radius:10px; padding:12px 10px; text-align:center; }
     .stat-num { font-size:22px; font-weight:800; color:var(--primary); line-height:1; }
