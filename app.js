@@ -89,6 +89,8 @@ function isRestDay(date) {
 }
 // 공휴일/수동휴무만(주말 제외) — 주간/격주는 지정 요일이 의도된 선택이라 주말엔 안 밀고 '휴일'에만 민다
 function isHolidayShift(date) { const dk = dateKey(date); return isHoliday(dk) || !!offDays[dk]; }
+// 휴무일에 걸린 반복 일정을 어느 방향으로 밀지: 사용자가 'prev'로 지정한 수동휴무만 이전 영업일, 나머지(공휴일·기본)는 다음 영업일
+function offDayDir(dk) { return offDays[dk] === 'prev' ? 'prev' : 'next'; }
 // 휴일이면 다음 평일로 이동 (date 포함 — date가 휴일이면 다음 영업일 반환)
 function nextWorkday(date) {
   let d = new Date(date);
@@ -643,31 +645,57 @@ function getRepeatTasksForDate(date, dayIdx) {
         if (dk <= oDk) return; // 원본일은 저장(원본)으로 표시
         // 1) 자연 발생일이고 공휴일/휴무일이 아니면 그대로(주말이어도) 표시
         if ((!rEnd || dk <= rEnd) && repeatNaturalOccurs(t, originDate, date) && !isHolidayShift(date)) { out.push({task:t, originDk:oDk, instanceDk:dk}); return; }
-        // 2) 공휴일/휴무일에 걸린 자연 발생일 → 다음 영업일로 1회 밀어 표시 (종료일은 자연 발생일 기준)
+        // 2) 공휴일/휴무일에 걸린 자연 발생일 → 지정 방향의 영업일로 1회 밀어 표시 (종료일은 자연 발생일 기준)
         if (!isRestDay(date)) {
-          const probe = new Date(date);
+          // (a) 과거 방향 탐색: '다음 영업일로' 밀려 이 영업일로 온 회차 (공휴일·기본휴무 포함)
+          let probe = new Date(date);
           for (let k=0; k<14; k++) {
             probe.setDate(probe.getDate()-1);
             if (!isRestDay(probe)) break;
             const pdk = dateKey(probe);
-            if (isHolidayShift(probe) && pdk >= oDk && (!rEnd || pdk <= rEnd) && repeatNaturalOccurs(t, originDate, probe)) { out.push({task:t, originDk:oDk, instanceDk:dk, adjusted:true}); break; }
+            if (isHolidayShift(probe) && offDayDir(pdk)==='next' && pdk >= oDk && (!rEnd || pdk <= rEnd) && repeatNaturalOccurs(t, originDate, probe)) { out.push({task:t, originDk:oDk, instanceDk:dk, adjusted:true}); return; }
+          }
+          // (b) 미래 방향 탐색: '이전 영업일로' 지정된 수동휴무의 회차를 이 영업일로 당겨 표시
+          probe = new Date(date);
+          for (let k=0; k<14; k++) {
+            probe.setDate(probe.getDate()+1);
+            if (!isRestDay(probe)) break;
+            const pdk = dateKey(probe);
+            if (offDays[pdk] && offDayDir(pdk)==='prev' && pdk >= oDk && (!rEnd || pdk <= rEnd) && repeatNaturalOccurs(t, originDate, probe)) { out.push({task:t, originDk:oDk, instanceDk:dk, adjusted:true}); return; }
           }
         }
         return;
       }
-      // 매월/매월N째/첫·말영업일: 날짜 기준 → 휴일이면 다음 영업일로 밀어 표시
+      // 매월/매월N째/첫·말영업일: 날짜 기준 → 휴일이면 지정 방향 영업일로 밀어 표시
       if (!SHIFT_REPEAT_TYPES.includes(t.repeat)) return;
-      if (dateIsRest) return; // 휴일엔 표시 안 함 (다음 영업일로 밀려나감)
-      // date 및 직전 휴일 후보들에 대해 자연발생 검사 → 휴일이면 date로 밀어 1회 표시
+      if (dateIsRest) return; // 휴일엔 표시 안 함 (영업일로 밀려나감)
+      let placed = false;
+      // (a) 과거 방향: date 및 직전 휴일들 → 다음 영업일(=date)로 밀어 표시. 단 '이전영업일로' 지정 휴무는 제외(당겨짐)
       for (const cand of [date, ...restBefore]) {
         const cdk = dateKey(cand);
         if (cdk < oDk) continue;
         if (cdk === oDk && !isRestDay(cand)) continue; // origin이 영업일이면 저장(원본)으로 표시
+        if (offDays[cdk] && offDayDir(cdk)==='prev') continue; // '이전영업일로' 휴무는 앞으로 밀지 않음
         if (cand > limitDate) continue;
         if (rEnd && cdk > rEnd) continue; // 종료일은 자연 발생일 기준 (밀린 표시일 아님)
         if (repeatNaturalOccurs(t, originDate, cand)) {
           out.push({task:t, originDk:oDk, instanceDk:dk, adjusted: cdk !== dk});
+          placed = true;
           break;
+        }
+      }
+      // (b) 미래 방향: '이전 영업일로' 지정된 휴무일의 회차를 이 영업일로 당겨 표시
+      if (!placed) {
+        const probe = new Date(date);
+        for (let k=0; k<14; k++) {
+          probe.setDate(probe.getDate()+1);
+          if (!isRestDay(probe)) break;
+          const pdk = dateKey(probe);
+          if (!(offDays[pdk] && offDayDir(pdk)==='prev')) continue;
+          if (pdk < oDk) continue;
+          if (probe > limitDate) continue;
+          if (rEnd && pdk > rEnd) continue;
+          if (repeatNaturalOccurs(t, originDate, probe)) { out.push({task:t, originDk:oDk, instanceDk:dk, adjusted:true}); break; }
         }
       }
     });
@@ -866,17 +894,18 @@ function toggleOffDay(dk) {
   if (READ_ONLY) return;
   if (offDays[dk]) {
     // 해제 — 이 휴무일로 옮겨졌던 할 일 원복
+    const prevVal = offDays[dk];
     delete offDays[dk];
     const restored = restoreMovedFrom(dk);
     saveOffDays(); saveTasks(); render();
     showUndoToast(restored ? `🏖 휴무일 해제 — ${restored}개를 원래 자리로 돌려놨어요` : '🏖 휴무일 해제했어요',
-      () => { offDays[dk] = true; applyOffDayMove(dk); saveOffDays(); saveTasks(); render(); });
+      () => { offDays[dk] = prevVal; if(prevVal!=='prev') applyOffDayMove(dk,'next'); else applyOffDayMove(dk,'prev'); saveOffDays(); saveTasks(); render(); });
     return;
   }
-  // 지정 — 옮길 할 일(비반복·미완료)이 있으면 전/후 영업일 중 선택 팝업
-  const doSet = (dir) => {
-    offDays[dk] = true;
-    const moved = dir ? applyOffDayMove(dk, dir) : 0;
+  // 지정 — 방향(전/후 영업일)을 저장하고, 비반복 할 일은 물리 이동 + 반복 일정은 표시단에서 같은 방향으로 이동
+  const doSet = (dir) => {                 // dir: 'prev' | 'next' | null(옮기지 않고 지정)
+    offDays[dk] = (dir === 'prev') ? 'prev' : 'next';   // null(none)도 반복 이동 기본값 next
+    const moved = (dir === 'prev' || dir === 'next') ? applyOffDayMove(dk, dir) : 0;
     saveOffDays(); saveTasks(); render();
     let msg = '🏖 휴무일로 지정했어요';
     if (moved) {
@@ -885,9 +914,12 @@ function toggleOffDay(dk) {
     }
     showUndoToast(msg, () => { delete offDays[dk]; restoreMovedFrom(dk); saveOffDays(); saveTasks(); render(); });
   };
+  // 옮길 대상 = 비반복 미완료 할 일 + 그날의 반복 일정(표시단 이동 대상)
   const movable = (tasks[dk] || []).filter(t => t && !t.checked && (!t.repeat || t.repeat === 'none')).length;
-  if (movable > 0) {
-    askOffDayDirection(dk, movable, (choice) => { if (choice !== null) doSet(choice === 'none' ? null : choice); });
+  let repeatCnt = 0;
+  try { repeatCnt = getRepeatTasksForDate(parseDk(dk), dateToDayIdx(dk)).length; } catch (e) {}
+  if (movable + repeatCnt > 0) {
+    askOffDayDirection(dk, movable + repeatCnt, (choice) => { if (choice !== null) doSet(choice === 'none' ? null : choice); });
   } else {
     doSet(null);
   }
