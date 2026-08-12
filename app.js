@@ -120,7 +120,7 @@ function tasksForDate(date, dayIdx) {
       out.push({ task: t, isRepeat: false, originDk: null, instanceDk: null, adjusted: false });
   });
   getRepeatTasksForDate(date, dayIdx).forEach(e =>
-    out.push({ task: e.task, isRepeat: true, originDk: e.originDk, instanceDk: e.instanceDk, adjusted: !!e.adjusted }));
+    out.push({ task: e.task, isRepeat: true, originDk: e.originDk, instanceDk: e.instanceDk, adjusted: e.adjusted || false }));
   return out;
 }
 // 해당 월의 첫/마지막 영업일
@@ -653,7 +653,7 @@ function getRepeatTasksForDate(date, dayIdx) {
             probe.setDate(probe.getDate()-1);
             if (!isRestDay(probe)) break;
             const pdk = dateKey(probe);
-            if (isHolidayShift(probe) && offDayDir(pdk)==='next' && pdk >= oDk && (!rEnd || pdk <= rEnd) && repeatNaturalOccurs(t, originDate, probe)) { out.push({task:t, originDk:oDk, instanceDk:dk, adjusted:true}); return; }
+            if (isHolidayShift(probe) && offDayDir(pdk)==='next' && pdk >= oDk && (!rEnd || pdk <= rEnd) && repeatNaturalOccurs(t, originDate, probe)) { out.push({task:t, originDk:oDk, instanceDk:dk, adjusted:'next'}); return; }
           }
           // (b) 미래 방향 탐색: '이전 영업일로' 지정된 수동휴무의 회차를 이 영업일로 당겨 표시
           probe = new Date(date);
@@ -661,7 +661,7 @@ function getRepeatTasksForDate(date, dayIdx) {
             probe.setDate(probe.getDate()+1);
             if (!isRestDay(probe)) break;
             const pdk = dateKey(probe);
-            if (offDays[pdk] && offDayDir(pdk)==='prev' && pdk >= oDk && (!rEnd || pdk <= rEnd) && repeatNaturalOccurs(t, originDate, probe)) { out.push({task:t, originDk:oDk, instanceDk:dk, adjusted:true}); return; }
+            if (offDays[pdk] && offDayDir(pdk)==='prev' && pdk >= oDk && (!rEnd || pdk <= rEnd) && repeatNaturalOccurs(t, originDate, probe)) { out.push({task:t, originDk:oDk, instanceDk:dk, adjusted:'prev'}); return; }
           }
         }
         return;
@@ -679,7 +679,7 @@ function getRepeatTasksForDate(date, dayIdx) {
         if (cand > limitDate) continue;
         if (rEnd && cdk > rEnd) continue; // 종료일은 자연 발생일 기준 (밀린 표시일 아님)
         if (repeatNaturalOccurs(t, originDate, cand)) {
-          out.push({task:t, originDk:oDk, instanceDk:dk, adjusted: cdk !== dk});
+          out.push({task:t, originDk:oDk, instanceDk:dk, adjusted: cdk !== dk ? 'next' : false});
           placed = true;
           break;
         }
@@ -695,7 +695,7 @@ function getRepeatTasksForDate(date, dayIdx) {
           if (pdk < oDk) continue;
           if (probe > limitDate) continue;
           if (rEnd && pdk > rEnd) continue;
-          if (repeatNaturalOccurs(t, originDate, probe)) { out.push({task:t, originDk:oDk, instanceDk:dk, adjusted:true}); break; }
+          if (repeatNaturalOccurs(t, originDate, probe)) { out.push({task:t, originDk:oDk, instanceDk:dk, adjusted:'prev'}); break; }
         }
       }
     });
@@ -2396,7 +2396,8 @@ function buildTaskItem(dk,task,isSub,parentId,isRepeatInst,originDk,instanceDk,a
     body.appendChild(cb);
   }
   if(!isSub&&adjusted){
-    body.appendChild(el('div','repeat-adjusted-badge',{textContent:'📅 휴일이라 다음 영업일로'}));
+    const _dirTxt = (adjusted==='prev') ? '이전' : '다음';
+    body.appendChild(el('div','repeat-adjusted-badge',{textContent:`📅 휴일이라 ${_dirTxt} 영업일로`}));
   }
   if(!isSub&&Array.isArray(task.subs)&&task.subs.length){
     const subChecked=s=>isRepeatInst?isRepeatChecked(s,instanceDk):(s&&s.checked);
