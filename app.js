@@ -1156,6 +1156,20 @@ function toggleTask(dk,id,subId) {
   saveTasks(dk); render();
 }
 function toggleStar(dk,id){if(READ_ONLY)return;const t=(tasks[dk]||[]).find(x=>x.id===id);if(t){t.starred=!t.starred;saveTasks(dk);render();}}
+// 일정 취소 표시(삭제 아님) — 비반복은 task.cancelled, 반복은 회차별 task.cancellations[instanceDk]
+function isTaskCancelled(task,isRepeatInst,instanceDk){ return isRepeatInst ? !!(task && task.cancellations && task.cancellations[instanceDk]) : !!(task && task.cancelled); }
+function toggleCancel(dk,id,isRepeatInst,originDk,instanceDk){
+  if(READ_ONLY)return;
+  const srcDk=isRepeatInst?originDk:dk;
+  const t=(tasks[srcDk]||[]).find(x=>x.id===id); if(!t)return;
+  if(isRepeatInst){
+    if(!t.cancellations) t.cancellations={};
+    if(t.cancellations[instanceDk]) delete t.cancellations[instanceDk]; else t.cancellations[instanceDk]=true;
+  } else {
+    t.cancelled=!t.cancelled;
+  }
+  saveTasks(srcDk); render();
+}
 function deleteTask(dk,id,subId) {
   if(READ_ONLY)return;
   if(!tasks[dk])return;
@@ -2197,6 +2211,8 @@ function buildTaskItem(dk,task,isSub,parentId,isRepeatInst,originDk,instanceDk,a
   const doneCls=(!isSub&&task.id===_justDoneId)?' just-done':'';
   if(task.id===_justDoneId)_justDoneId=null;
   const item=el('div',`task-item${isSub?' sub':''}${prioCls}${doneCls}`);
+  const _cancelled = isTaskCancelled(task, isRepeatInst, instanceDk);
+  if(_cancelled) item.classList.add('cancelled');
   // 드래그(터치) 메타 — 데스크탑 HTML5 DnD와 동일 정보
   item._task = { dk: isRepeatInst?originDk:dk, id: task.id, isRepeat: !!isRepeatInst, instanceDk: isRepeatInst?instanceDk:null, isSub: !!isSub, parentId: parentId||null, colDk: dk };
   if(!READ_ONLY && !selectMode) attachTaskTouchDrag(item);
@@ -2399,6 +2415,9 @@ function buildTaskItem(dk,task,isSub,parentId,isRepeatInst,originDk,instanceDk,a
     const _dirTxt = (adjusted==='prev') ? '이전' : '다음';
     body.appendChild(el('div','repeat-adjusted-badge',{textContent:`📅 휴일이라 ${_dirTxt} 영업일로`}));
   }
+  if(!isSub&&_cancelled){
+    body.appendChild(el('div','task-cancel-badge',{textContent:'🚫 취소됨'}));
+  }
   if(!isSub&&Array.isArray(task.subs)&&task.subs.length){
     const subChecked=s=>isRepeatInst?isRepeatChecked(s,instanceDk):(s&&s.checked);
     const subDone=task.subs.filter(s=>s&&subChecked(s)).length;
@@ -2460,6 +2479,7 @@ function buildTaskItem(dk,task,isSub,parentId,isRepeatInst,originDk,instanceDk,a
     navigator.share({title:'마이플래너',text:`[${d.getMonth()+1}/${d.getDate()}]${task.time?' '+task.time:''} ${task.text}`}).catch(()=>{});
   });
   if(!IS_TEAM && fbDb) trayItem('users','팀에 등록',null,()=>registerTaskToTeam(dk,task,isRepeatInst,originDk));
+  trayItem('ban', isTaskCancelled(task,isRepeatInst,instanceDk)?'취소 해제':'취소하기', null, ()=>toggleCancel(dk,task.id,isRepeatInst,originDk,instanceDk));
   trayItem('x','삭제','del',()=>{
     if(isRepeatInst||(task.repeat&&task.repeat!=='none')){
       openRepeatDel(isRepeatInst?originDk:dk, task.id, dk);

@@ -714,6 +714,10 @@
     .day-log-add:hover { color:var(--primary); border-color:var(--primary); }
     .day-log-form { display:flex; }
     .day-log-input { flex:1; border:1px solid var(--primary); border-radius:8px; padding:4px 8px; font-size:12px; font-family:inherit; background:var(--surface); color:var(--text); outline:none; }
+    /* 취소된 일정 표시 */
+    .task-item.cancelled .task-text { text-decoration:line-through; opacity:.55; }
+    .task-item.cancelled { opacity:.72; }
+    .task-cancel-badge { display:inline-flex; align-items:center; gap:3px; margin-top:3px; font-size:10px; font-weight:600; color:var(--red); background:color-mix(in srgb, var(--red) 12%, transparent); border-radius:6px; padding:1px 6px; width:fit-content; }
     /* 별표 / 컬러 / 중요도 기능 제거 — 표시 숨김 */
     .task-star, .color-dot, .priority-flag { display:none !important; }
     .task-item.prio-high, .task-item.prio-mid, .task-item.prio-low { background:none !important; box-shadow:none !important; }
