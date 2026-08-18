@@ -437,7 +437,10 @@ function normalizeTasks(raw) {
       memoHistory: Array.isArray(t.memoHistory) ? t.memoHistory : [],
       comments: Array.isArray(t.comments) ? t.comments : [],
     }));
-    if (clean.length) out[dk] = clean;
+    // 같은 id가 중복 저장된 항목 제거 (동기화 충돌 등으로 인한 중복 방지)
+    const _seenId = new Set();
+    const deduped = clean.filter(t => { if (t.id == null) return true; if (_seenId.has(t.id)) return false; _seenId.add(t.id); return true; });
+    if (deduped.length) out[dk] = deduped;
   });
   return out;
 }
@@ -700,8 +703,11 @@ function getRepeatTasksForDate(date, dayIdx) {
       }
     });
   });
-  _repeatCache.set(dk, out);
-  return out;
+  // 방어적 중복 제거: 같은 날짜에 동일 task.id가 여러 번 들어오면 1개만 표시
+  const _seen = new Set();
+  const deduped = out.filter(e => { const k = e.task && e.task.id; if (k == null) return true; if (_seen.has(k)) return false; _seen.add(k); return true; });
+  _repeatCache.set(dk, deduped);
+  return deduped;
 }
 function isRepeatChecked(task, instanceDk) {
   if (!task.completions) return task.checked;
