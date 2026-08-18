@@ -89,8 +89,20 @@ function isRestDay(date) {
 }
 // 공휴일/수동휴무만(주말 제외) — 주간/격주는 지정 요일이 의도된 선택이라 주말엔 안 밀고 '휴일'에만 민다
 function isHolidayShift(date) { const dk = dateKey(date); return isHoliday(dk) || !!offDays[dk]; }
-// 휴무일에 걸린 반복 일정을 어느 방향으로 밀지: 사용자가 'prev'로 지정한 수동휴무만 이전 영업일, 나머지(공휴일·기본)는 다음 영업일
-function offDayDir(dk) { return offDays[dk] === 'prev' ? 'prev' : 'next'; }
+// 휴무일/공휴일에 걸린 반복 일정을 어느 방향으로 밀지: 사용자가 'prev'로 지정한 경우만 이전 영업일, 나머지(기본)는 다음 영업일
+// (수동휴무는 offDays, 공휴일 방향 지정은 holidayDirs에 저장)
+function offDayDir(dk) { return (offDays[dk] === 'prev' || (typeof holidayDirs !== 'undefined' && holidayDirs[dk] === 'prev')) ? 'prev' : 'next'; }
+// 연속 휴일 구간(주말+공휴일+수동휴무) 전체의 이동 방향: 구간 내 하루라도 'prev' 지정이 있으면 'prev', 아니면 'next'
+// → 공휴일 하나만 'prev'로 눌러도, 그 공휴일이 낀 주말까지 포함한 구간의 반복 일정이 이전 영업일로 이동
+function restRunDir(dateOrDk) {
+  const start = (typeof dateOrDk === 'string') ? parseDk(dateOrDk) : new Date(dateOrDk);
+  if (!isRestDay(start)) return 'next';
+  let p = new Date(start);
+  for (let k = 0; k < 20 && isRestDay(p); k++) { if (offDayDir(dateKey(p)) === 'prev') return 'prev'; p.setDate(p.getDate() - 1); }
+  p = new Date(start); p.setDate(p.getDate() + 1);
+  for (let k = 0; k < 20 && isRestDay(p); k++) { if (offDayDir(dateKey(p)) === 'prev') return 'prev'; p.setDate(p.getDate() + 1); }
+  return 'next';
+}
 // 휴일이면 다음 평일로 이동 (date 포함 — date가 휴일이면 다음 영업일 반환)
 function nextWorkday(date) {
   let d = new Date(date);
@@ -206,6 +218,35 @@ function initOffSync() {
 
 const READ_ONLY = URL_PARAMS.get('ro') === '1';
 if (READ_ONLY) document.documentElement.classList.add('readonly-mode');
+
+// ── 공휴일 반복 이동 방향 (특정 공휴일의 반복 일정을 이전 영업일로 보낼지 지정, 기기 간 동기화) ──
+const HDIR_KEY = USER_ID ? `calHolidayDirs_${USER_ID}` : 'calHolidayDirs';
+let holidayDirs = (() => { try { const o = JSON.parse(localStorage.getItem(HDIR_KEY) || '{}'); return (o && typeof o === 'object') ? o : {}; } catch { return {}; } })();
+let hdirSaveTimer = null, pendingHdirLocal = false;
+function hdirFbRef() { return FB_UID && USER_ID !== 'demo' && fbDb ? fbDb.ref(`users/${FB_UID}/holidaydirs`) : null; }
+function saveHolidayDirs() {
+  if (READ_ONLY) return;
+  localStorage.setItem(HDIR_KEY, JSON.stringify(holidayDirs));
+  const ref = hdirFbRef(); if (!ref) return;
+  pendingHdirLocal = true;
+  clearTimeout(hdirSaveTimer);
+  hdirSaveTimer = setTimeout(() => {
+    hdirSaveTimer = null;
+    ref.set(Object.keys(holidayDirs).length ? fbClean(holidayDirs) : null)
+      .then(() => { pendingHdirLocal = false; _pendingCollections.delete('hdir'); })
+      .catch((e) => { console.warn('Firebase 저장 실패(holidaydirs):', e); _pendingCollections.add('hdir'); });
+  }, 300);
+}
+function initHolidayDirSync() {
+  const ref = hdirFbRef(); if (!ref) return;
+  ref.on('value', snap => {
+    if (pendingHdirLocal) return;
+    const remote = snap.val();
+    holidayDirs = (remote && typeof remote === 'object') ? remote : {};
+    localStorage.setItem(HDIR_KEY, JSON.stringify(holidayDirs));
+    render();
+  }, () => {});
+}
 
 // ── 날짜별 기록 (체크박스 없는 메모 — 점심약속/연차 등, 기기 간 동기화) ──
 const DAYLOG_KEY = USER_ID ? `calDayLogs_${USER_ID}` : 'calDayLogs';
@@ -656,7 +697,7 @@ function getRepeatTasksForDate(date, dayIdx) {
             probe.setDate(probe.getDate()-1);
             if (!isRestDay(probe)) break;
             const pdk = dateKey(probe);
-            if (isHolidayShift(probe) && offDayDir(pdk)==='next' && pdk >= oDk && (!rEnd || pdk <= rEnd) && repeatNaturalOccurs(t, originDate, probe)) { out.push({task:t, originDk:oDk, instanceDk:dk, adjusted:'next'}); return; }
+            if (isHolidayShift(probe) && restRunDir(probe)==='next' && pdk >= oDk && (!rEnd || pdk <= rEnd) && repeatNaturalOccurs(t, originDate, probe)) { out.push({task:t, originDk:oDk, instanceDk:dk, adjusted:'next'}); return; }
           }
           // (b) 미래 방향 탐색: '이전 영업일로' 지정된 수동휴무의 회차를 이 영업일로 당겨 표시
           probe = new Date(date);
@@ -664,7 +705,7 @@ function getRepeatTasksForDate(date, dayIdx) {
             probe.setDate(probe.getDate()+1);
             if (!isRestDay(probe)) break;
             const pdk = dateKey(probe);
-            if (offDays[pdk] && offDayDir(pdk)==='prev' && pdk >= oDk && (!rEnd || pdk <= rEnd) && repeatNaturalOccurs(t, originDate, probe)) { out.push({task:t, originDk:oDk, instanceDk:dk, adjusted:'prev'}); return; }
+            if (isHolidayShift(probe) && restRunDir(probe)==='prev' && pdk >= oDk && (!rEnd || pdk <= rEnd) && repeatNaturalOccurs(t, originDate, probe)) { out.push({task:t, originDk:oDk, instanceDk:dk, adjusted:'prev'}); return; }
           }
         }
         return;
@@ -678,7 +719,7 @@ function getRepeatTasksForDate(date, dayIdx) {
         const cdk = dateKey(cand);
         if (cdk < oDk) continue;
         if (cdk === oDk && !isRestDay(cand)) continue; // origin이 영업일이면 저장(원본)으로 표시
-        if (offDays[cdk] && offDayDir(cdk)==='prev') continue; // '이전영업일로' 휴무는 앞으로 밀지 않음
+        if (isRestDay(cand) && restRunDir(cand)==='prev') continue; // '이전영업일로' 지정된 구간은 앞으로 밀지 않음
         if (cand > limitDate) continue;
         if (rEnd && cdk > rEnd) continue; // 종료일은 자연 발생일 기준 (밀린 표시일 아님)
         if (repeatNaturalOccurs(t, originDate, cand)) {
@@ -694,7 +735,7 @@ function getRepeatTasksForDate(date, dayIdx) {
           probe.setDate(probe.getDate()+1);
           if (!isRestDay(probe)) break;
           const pdk = dateKey(probe);
-          if (!(offDays[pdk] && offDayDir(pdk)==='prev')) continue;
+          if (restRunDir(probe)!=='prev') continue;
           if (pdk < oDk) continue;
           if (probe > limitDate) continue;
           if (rEnd && pdk > rEnd) continue;
@@ -956,6 +997,43 @@ function askOffDayDirection(dk, count, cb) {
   box.appendChild(c);
   ov.appendChild(box); document.body.appendChild(ov);
   ov.onclick = e => { if (e.target === ov) { ov.remove(); cb(null); } };
+}
+
+// 공휴일 반복 이동 방향 설정 (holidayDirs) — 'prev'면 이전 영업일, 'next'(기본)면 다음 영업일
+function setHolidayDir(dk, dir) {
+  if (READ_ONLY) return;
+  const prev = holidayDirs[dk];
+  if (dir === 'prev') holidayDirs[dk] = 'prev'; else delete holidayDirs[dk]; // next=기본(엔트리 없음)
+  saveHolidayDirs(); render();
+  showUndoToast(`🎌 이 공휴일의 반복 일정을 ${dir === 'prev' ? '이전' : '다음'} 영업일로 설정했어요`,
+    () => { if (prev === undefined) delete holidayDirs[dk]; else holidayDirs[dk] = prev; saveHolidayDirs(); render(); });
+}
+// 공휴일 배지 클릭 → 전/후 영업일 선택 팝업
+function askHolidayDirection(dk) {
+  if (READ_ONLY) return;
+  const prevDk = prevWorkdayBefore(dk), nextDk = nextWorkdayAfter(dk);
+  const pd = parseDk(prevDk), nd = parseDk(nextDk);
+  const cur = offDayDir(dk); // 'prev' | 'next'
+  const ov = el('div', 'modal-overlay');
+  const box = el('div', 'modal-box'); box.style.maxWidth = '340px';
+  box.appendChild(el('div', 'modal-title', { textContent: '🎌 공휴일 반복 일정 이동' }));
+  box.appendChild(el('div', '', { textContent: `${HOLIDAYS[dk] || '공휴일'} — 이 날에 겹치는 반복 일정을 어느 영업일로 옮길까요?`, style: 'font-size:13px;color:var(--text2);margin-bottom:12px;line-height:1.5' }));
+  const mk = (label, sub, fn, active) => {
+    const b = el('button', active ? 'btn-primary' : 'btn-secondary', { type: 'button' });
+    b.style.cssText = 'width:100%;margin-bottom:8px;text-align:left;padding:10px 12px';
+    b.appendChild(el('div', '', { textContent: label + (active ? ' ✓' : ''), style: 'font-weight:600' }));
+    b.appendChild(el('div', '', { textContent: sub, style: 'font-size:11px;opacity:.8;margin-top:2px' }));
+    b.onclick = () => { ov.remove(); fn(); };
+    return b;
+  };
+  box.appendChild(mk('⬅ 전 영업일로', `${pd.getMonth()+1}/${pd.getDate()}(${DAY_NAMES[dateToDayIdx(prevDk)]})`, () => setHolidayDir(dk, 'prev'), cur === 'prev'));
+  box.appendChild(mk('➡ 다음 영업일로', `${nd.getMonth()+1}/${nd.getDate()}(${DAY_NAMES[dateToDayIdx(nextDk)]}) · 기본`, () => setHolidayDir(dk, 'next'), cur === 'next'));
+  const c = el('button', 'btn-secondary', { type: 'button', textContent: '취소' });
+  c.style.cssText = 'width:100%;margin-top:4px';
+  c.onclick = () => ov.remove();
+  box.appendChild(c);
+  ov.appendChild(box); document.body.appendChild(ov);
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
 }
 
 // ── Undo toast ──
@@ -2674,7 +2752,16 @@ function buildDayCol(date,dayIdx){
   nw.appendChild(el('div','day-num',{textContent:date.getDate()}));
   hdr.appendChild(nw);
   hdr.appendChild(el('div','day-month',{textContent:`${date.getMonth()+1}월`}));
-  if(holiday) hdr.appendChild(el('div','holiday-label',{textContent:(HOLIDAYS[dk]?'🎌 ':'🏖 ')+holiday}));
+  if(holiday){
+    const _dirTag = (HOLIDAYS[dk] && offDayDir(dk)==='prev') ? ' ⬅이전' : '';
+    const hl=el('div','holiday-label',{textContent:(HOLIDAYS[dk]?'🎌 ':'🏖 ')+holiday+_dirTag});
+    if(!READ_ONLY && HOLIDAYS[dk]){   // 공휴일이면 클릭해서 전/후 영업일 방향 선택
+      hl.classList.add('clickable');
+      hl.title='이 공휴일에 겹치는 반복 일정을 전/후 영업일 중 어디로 옮길지 선택';
+      hl.onclick=e=>{e.stopPropagation();askHolidayDirection(dk);};
+    }
+    hdr.appendChild(hl);
+  }
   if(!READ_ONLY){
     const offBtn=el('button','offday-btn',{textContent:isOff?'🏖 휴무 해제':'🏖 휴무일',title:isOff?'휴무일 해제':'휴무일로 지정 — 이 날의 할 일은 다음 영업일로 이동'});
     offBtn.onclick=e=>{e.stopPropagation();toggleOffDay(dk);};
@@ -6379,6 +6466,7 @@ initFirebaseSync();
 renderNoteWins();
 initMemoSync();
 initOffSync();
+initHolidayDirSync();
 initDayLogSync();
 // (구독 팀 동기화는 initFirebaseSync에서 개인 트리 로드 후 호출됨)
 initShareSync();
@@ -6943,6 +7031,7 @@ function collectAllData() {
     _app: 'myplanner', _v: 1, _exported: new Date().toISOString(), user: USER_ID || null,
     tasks: tasks,
     offDays: (typeof offDays !== 'undefined' ? offDays : {}),
+    holidayDirs: (typeof holidayDirs !== 'undefined' ? holidayDirs : {}),
     dayLogs: (typeof dayLogs !== 'undefined' ? dayLogs : {}),
     memos: (typeof memos !== 'undefined' ? memos : {}),
     shares: (typeof shares !== 'undefined' ? shares : {}),
@@ -6992,6 +7081,7 @@ function importAllData(file) {
     tasks = normalizeTasks(data.tasks);
     if (typeof saveTasks === 'function') saveTasks();
     if (data.offDays && typeof offDays !== 'undefined') { offDays = data.offDays; saveOffDays(); }
+    if (data.holidayDirs && typeof holidayDirs !== 'undefined') { holidayDirs = data.holidayDirs; saveHolidayDirs(); }
     if (data.dayLogs && typeof dayLogs !== 'undefined') { dayLogs = _normDayLogs(data.dayLogs); saveDayLogs(); }
     if (data.memos && typeof memos !== 'undefined') { memos = data.memos; saveMemos(); }
     if (data.shares && typeof shares !== 'undefined') { shares = data.shares; saveShares(); }
