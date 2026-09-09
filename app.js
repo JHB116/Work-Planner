@@ -2794,13 +2794,13 @@ function buildDayCol(date,dayIdx){
       col.appendChild(banner);
     }
   }
-  // tasks
+  // tasks — 직접 태스크와 반복 인스턴스를 하나로 합쳐 시간순 정렬 (시간 지정 항목이 먼저, 시간순으로, 그 다음 미지정)
   const list=el('div','tasks-list');
-  const sorted=[...dayTasks].sort(taskSort).filter(matchesQuery);
-  sorted.forEach(t=>list.appendChild(buildTaskItem(dk,t,false,null,false,null,null)));
-  getRepeatTasksForDate(date,dayIdx).filter(({task})=>matchesQuery(task)).forEach(({task,originDk,instanceDk,adjusted})=>{
-    list.appendChild(buildTaskItem(dk,task,false,null,true,originDk,instanceDk,adjusted));
-  });
+  const entries=[];
+  dayTasks.filter(matchesQuery).forEach(t=>entries.push({task:t,isRepeat:false,originDk:null,instanceDk:null,adjusted:null}));
+  getRepeatTasksForDate(date,dayIdx).filter(({task})=>matchesQuery(task)).forEach(({task,originDk,instanceDk,adjusted})=>entries.push({task,isRepeat:true,originDk,instanceDk,adjusted}));
+  entries.sort((a,b)=>taskSort(a.task,b.task));
+  entries.forEach(({task,isRepeat,originDk,instanceDk,adjusted})=>list.appendChild(buildTaskItem(dk,task,false,null,isRepeat,originDk,instanceDk,adjusted)));
   // 👥 공유받은 일정 (읽기 전용)
   const sharedRows = sharedTasksFor(dk);
   sharedRows.forEach(({owner, task, color}) => {
@@ -2944,10 +2944,13 @@ function buildFocusView(){
   const list1=el('div','tasks-list focus-list');
   const directToday=visibleStored(dk).filter(matchesQuery);
   const repeatsToday=getRepeatTasksForDate(now,dayIdx).filter(({task})=>matchesQuery(task));
-  const sortedDirect=[...directToday].sort(taskSort);
-  sortedDirect.forEach(t=>list1.appendChild(buildTaskItem(dk,t,false,null,false,null,null)));
-  repeatsToday.forEach(({task,originDk,instanceDk,adjusted})=>list1.appendChild(buildTaskItem(dk,task,false,null,true,originDk,instanceDk,adjusted)));
-  if(!sortedDirect.length&&!repeatsToday.length) list1.appendChild(el('div','focus-empty',{textContent:'오늘 할 일이 없어요 🎉'}));
+  // 직접 태스크와 반복 인스턴스를 하나로 합쳐 시간순 정렬 (시간 지정 항목이 먼저, 시간순으로, 그 다음 미지정)
+  const todayEntries=[];
+  directToday.forEach(t=>todayEntries.push({task:t,isRepeat:false,originDk:null,instanceDk:null,adjusted:null}));
+  repeatsToday.forEach(({task,originDk,instanceDk,adjusted})=>todayEntries.push({task,isRepeat:true,originDk,instanceDk,adjusted}));
+  todayEntries.sort((a,b)=>taskSort(a.task,b.task));
+  todayEntries.forEach(({task,isRepeat,originDk,instanceDk,adjusted})=>list1.appendChild(buildTaskItem(dk,task,false,null,isRepeat,originDk,instanceDk,adjusted)));
+  if(!todayEntries.length) list1.appendChild(el('div','focus-empty',{textContent:'오늘 할 일이 없어요 🎉'}));
   sec1.appendChild(list1);
   container.appendChild(sec1);
 
