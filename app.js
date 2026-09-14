@@ -1414,6 +1414,7 @@ function openMovePopup(anchor, fromDk, taskId, repCtx){
   };
 
   const opts=[
+    {label:'오늘',       icon:'📍', date: (()=>{const d=new Date(tod);return d;})()},
     {label:'내일',       icon:'☀️', date: (()=>{const d=new Date(tod);d.setDate(d.getDate()+1);return d;})()},
     {label:'모레',       icon:'📅', date: (()=>{const d=new Date(tod);d.setDate(d.getDate()+2);return d;})()},
     {label:'다음 주 월요일', icon:'📆', date: (()=>{const d=new Date(tod);d.setDate(d.getDate()+(8-d.getDay())%7||7);return d;})()},
