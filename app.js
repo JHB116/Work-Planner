@@ -900,8 +900,15 @@ function carryOverFrom(fromDk, toDk) {
 
 // ── 휴무일 지정/해제 (지정 시 미완료 할 일을 다음 영업일로 자동 이동) ──
 // 휴무일 지정: 비반복 미완료 할 일을 다음 영업일로 이동(movedFrom 태그). 반복은 표시단에서 자동 이동.
+// dir: 'prev' | 'next' | 'YYYY-MM-DD'(사용자가 직접 지정한 날짜)
+function isCustomDateDir(dir) { return typeof dir === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dir); }
+function offDayTargetDk(dk, dir) {
+  if (dir === 'prev') return prevWorkdayBefore(dk);
+  if (isCustomDateDir(dir)) return dir;
+  return nextWorkdayAfter(dk);
+}
 function applyOffDayMove(dk, dir) {
-  const toDk = (dir === 'prev') ? prevWorkdayBefore(dk) : nextWorkdayAfter(dk);
+  const toDk = offDayTargetDk(dk, dir);
   const list = tasks[dk] || [];
   let moved = 0;
   for (let i = list.length - 1; i >= 0; i--) {
@@ -946,17 +953,18 @@ function toggleOffDay(dk) {
     const restored = restoreMovedFrom(dk);
     saveOffDays(); saveTasks(); render();
     showUndoToast(restored ? `🏖 휴무일 해제 — ${restored}개를 원래 자리로 돌려놨어요` : '🏖 휴무일 해제했어요',
-      () => { offDays[dk] = prevVal; if(prevVal!=='prev') applyOffDayMove(dk,'next'); else applyOffDayMove(dk,'prev'); saveOffDays(); saveTasks(); render(); });
+      () => { offDays[dk] = prevVal; applyOffDayMove(dk, prevVal); saveOffDays(); saveTasks(); render(); });
     return;
   }
   // 지정 — 방향(전/후 영업일)을 저장하고, 비반복 할 일은 물리 이동 + 반복 일정은 표시단에서 같은 방향으로 이동
-  const doSet = (dir) => {                 // dir: 'prev' | 'next' | null(옮기지 않고 지정)
-    offDays[dk] = (dir === 'prev') ? 'prev' : 'next';   // null(none)도 반복 이동 기본값 next
-    const moved = (dir === 'prev' || dir === 'next') ? applyOffDayMove(dk, dir) : 0;
+  const doSet = (dir) => {                 // dir: 'prev' | 'next' | 'YYYY-MM-DD'(직접 지정) | null(옮기지 않고 지정)
+    // offDays 값: 'prev'/'next'는 반복 일정 이동 방향, 직접 지정 날짜는 그 날짜(반복 이동은 next 기본)
+    offDays[dk] = (dir === 'prev') ? 'prev' : (isCustomDateDir(dir) ? dir : 'next');   // null(none)도 반복 이동 기본값 next
+    const moved = (dir !== null) ? applyOffDayMove(dk, dir) : 0;
     saveOffDays(); saveTasks(); render();
     let msg = '🏖 휴무일로 지정했어요';
     if (moved) {
-      const toDk = (dir === 'prev') ? prevWorkdayBefore(dk) : nextWorkdayAfter(dk), d = parseDk(toDk);
+      const toDk = offDayTargetDk(dk, dir), d = parseDk(toDk);
       msg = `🏖 휴무일 지정 — 할 일 ${moved}개를 ${d.getMonth()+1}/${d.getDate()}(${DAY_NAMES[dateToDayIdx(toDk)]})로 이동했어요`;
     }
     showUndoToast(msg, () => { delete offDays[dk]; restoreMovedFrom(dk); saveOffDays(); saveTasks(); render(); });
@@ -990,6 +998,21 @@ function askOffDayDirection(dk, count, cb) {
   };
   box.appendChild(mk('⬅ 전 영업일로', `${pd.getMonth()+1}/${pd.getDate()}(${DAY_NAMES[dateToDayIdx(prevDk)]})`, () => cb('prev')));
   box.appendChild(mk('➡ 다음 영업일로', `${nd.getMonth()+1}/${nd.getDate()}(${DAY_NAMES[dateToDayIdx(nextDk)]})`, () => cb('next'), true));
+  // 📅 날짜 직접 지정 — 사용자가 원하는 날짜로 할 일을 옮김
+  const dateBtn = mk('📅 날짜 직접 지정', '원하는 날짜를 골라 옮기기', () => {});
+  const dateInp = document.createElement('input');
+  dateInp.type = 'date';
+  dateInp.value = nextDk;
+  dateInp.style.cssText = 'position:absolute;opacity:0;width:0;height:0;pointer-events:none';
+  dateInp.onchange = () => {
+    const v = dateInp.value;
+    if (!v) return;
+    if (v === dk) { alert('휴무일 당일이 아닌 다른 날짜를 골라 주세요'); return; }
+    ov.remove(); cb(v);
+  };
+  dateBtn.appendChild(dateInp);
+  dateBtn.onclick = () => { dateInp.showPicker ? dateInp.showPicker() : dateInp.click(); };
+  box.appendChild(dateBtn);
   box.appendChild(mk('옮기지 않고 지정', '할 일은 그대로 두기', () => cb('none')));
   const c = el('button', 'btn-secondary', { type: 'button', textContent: '취소' });
   c.style.cssText = 'width:100%;margin-top:4px';
