@@ -308,6 +308,16 @@ function removeDayLog(dk, i){
     saveDayLogs(); render();
   });
 }
+function editDayLog(dk, i, text){
+  if(READ_ONLY) return;
+  if(!Array.isArray(dayLogs[dk]) || i<0 || i>=dayLogs[dk].length) return;
+  const v=(text||'').trim();
+  activeLogEdit=null;
+  if(!v){ removeDayLog(dk,i); return; }   // 내용을 비우면 삭제(되돌리기 지원)
+  if(dayLogs[dk][i]===v){ render(); return; }  // 변경 없음
+  dayLogs[dk][i]=v;
+  saveDayLogs(); render();
+}
 // 체크박스 없는 '기록' 란 (날짜 칸 하단)
 function buildDayLogs(dk){
   const wrap=el('div','day-logs');
@@ -315,11 +325,31 @@ function buildDayLogs(dk){
   logs.forEach((text,i)=>{
     const row=el('div','day-log-item');
     row.appendChild(el('span','day-log-dot',{textContent:'📌'}));
-    row.appendChild(el('span','day-log-text',{textContent:text}));
-    if(!READ_ONLY){
-      const del=el('button','day-log-del',{type:'button',textContent:'×',title:'기록 삭제'});
-      del.onclick=e=>{ e.stopPropagation(); removeDayLog(dk,i); };
-      row.appendChild(del);
+    if(!READ_ONLY && activeLogEdit===`${dk}:${i}`){
+      // 수정 모드: 현재 내용을 채운 인라인 입력창
+      const form=el('form','day-log-form');
+      const input=el('input','day-log-input',{type:'text',value:text});
+      let done=false;
+      const commit=()=>{ if(done)return; done=true; editDayLog(dk,i,input.value); };
+      form.appendChild(input);
+      form.onsubmit=e=>{ e.preventDefault(); commit(); };
+      input.onblur=commit;
+      input.onkeydown=e=>{ if(e.key==='Escape'){ done=true; activeLogEdit=null; render(); } };
+      row.appendChild(form);
+      setTimeout(()=>{ try{ input.focus(); input.select(); }catch(_){} },0);
+    } else {
+      const span=el('span','day-log-text',{textContent:text});
+      if(!READ_ONLY){
+        span.title='탭하여 수정';
+        span.style.cursor='pointer';
+        span.onclick=e=>{ e.stopPropagation(); activeLogInput=null; activeLogEdit=`${dk}:${i}`; render(); };
+      }
+      row.appendChild(span);
+      if(!READ_ONLY){
+        const del=el('button','day-log-del',{type:'button',textContent:'×',title:'기록 삭제'});
+        del.onclick=e=>{ e.stopPropagation(); removeDayLog(dk,i); };
+        row.appendChild(del);
+      }
     }
     wrap.appendChild(row);
   });
@@ -337,7 +367,7 @@ function buildDayLogs(dk){
     setTimeout(()=>{ try{ input.focus(); }catch(_){} },0);
   } else {
     const add=el('button','day-log-add',{type:'button',innerHTML:'✎ 기록 추가'});
-    add.onclick=()=>{ activeLogInput=dk; render(); };
+    add.onclick=()=>{ activeLogInput=dk; activeLogEdit=null; render(); };
     wrap.appendChild(add);
   }
   return wrap;
@@ -448,6 +478,7 @@ let yearNum = new Date().getFullYear();
 let tasks = loadTasks();
 let activeInput = null;
 let activeLogInput = null;   // 날짜별 '기록' 입력창이 열린 dk
+let activeLogEdit = null;    // 수정 중인 기록: `${dk}:${i}` 형식
 let justToggledCb = null;   // 방금 토글한 체크박스만 팝 애니메이션 (재렌더 시 전체 팝 버그 방지)
 let _justDoneId = null;
 let _lastRenderedView = null;  // 뷰 종류가 바뀔 때만 전환 애니메이션 (체크 토글 재렌더엔 미적용)
