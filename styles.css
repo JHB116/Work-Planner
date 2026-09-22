@@ -716,7 +716,9 @@
     .day-log-input { flex:1; border:1px solid var(--primary); border-radius:8px; padding:4px 8px; font-size:12px; font-family:inherit; background:var(--surface); color:var(--text); outline:none; }
     /* 취소된 일정 표시 */
     .task-item.cancelled .task-text { text-decoration:line-through; opacity:.55; }
-    .task-item.cancelled { opacity:.72; }
+    /* 취소된 항목은 흐리게 보이되, ⋯ 메뉴/트레이(취소 해제 등)는 완전히 불투명·클릭 가능하게 유지.
+       아이템 전체에 opacity를 주면 스택 컨텍스트가 생겨 드롭다운이 다음 항목에 가려져 클릭이 막힘. */
+    .task-item.cancelled > *:not(.task-actions-wrap) { opacity:.72; }
     .task-cancel-badge { display:inline-flex; align-items:center; gap:3px; margin-top:3px; font-size:10px; font-weight:600; color:var(--red); background:color-mix(in srgb, var(--red) 12%, transparent); border-radius:6px; padding:1px 6px; width:fit-content; }
     /* 별표 / 컬러 / 중요도 기능 제거 — 표시 숨김 */
     .task-star, .color-dot, .priority-flag { display:none !important; }
