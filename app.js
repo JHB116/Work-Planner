@@ -117,9 +117,13 @@ function isDisplacedRecurringOrigin(t, dk) {
   if (t.repeat === 'weekly') return isHolidayShift(parseDk(dk)); // 주간 원본이 공휴일/휴무일이면 다음 영업일로
   return false;
 }
-// 해당 날짜에 '저장된' 태스크 중 화면에 보일 것 (휴일로 밀린 반복 원본 제외)
+// 반복 원본의 첫 회차(저장일)를 '이 날짜만 삭제/이동'으로 건너뛴 경우
+function isSkippedRecurringOrigin(t, dk) {
+  return !!(t && t.repeat && t.repeat !== 'none' && t.skips && t.skips[dk]);
+}
+// 해당 날짜에 '저장된' 태스크 중 화면에 보일 것 (휴일로 밀린 반복 원본·건너뛴 첫 회차 제외)
 function visibleStored(dk) {
-  return (tasks[dk] || []).filter(t => !isDisplacedRecurringOrigin(t, dk));
+  return (tasks[dk] || []).filter(t => !isDisplacedRecurringOrigin(t, dk) && !isSkippedRecurringOrigin(t, dk));
 }
 // 해당 날짜에 표시할 태스크 항목 통합(저장 + 반복 인스턴스) — 저장→반복 순.
 // visibleStored와 getRepeatTasksForDate를 항상 짝지어 호출(누락으로 인한 중복/누락 버그 방지).
@@ -1153,9 +1157,7 @@ function attachTaskTouchDrag(item){
         toDk=tm.colDk;
       } else if(tg.type==='col'){ toDk=tg.dk; }
       if(!toDk || toDk===meta.colDk) return;
-      if(meta.isRepeat){
-        askRepeatMoveScope(scope=>{ if(scope==='one') moveRepeatInstanceOne(meta.dk, meta.id, meta.instanceDk, toDk); else if(scope==='all') moveTask(meta.dk, meta.id, toDk); });
-      } else moveTask(meta.dk, meta.id, toDk);
+      moveTaskOrAsk(meta.dk, meta.id, meta.isRepeat, meta.instanceDk, toDk);
     };
     const cleanup=()=>{ clearTimeout(lp); document.removeEventListener('pointermove',move); document.removeEventListener('pointerup',end); document.removeEventListener('pointercancel',end); };
     document.addEventListener('pointermove',move);
@@ -1391,6 +1393,20 @@ function askRepeatMoveScope(cb){
   ov.appendChild(box); document.body.appendChild(ov); ov.onclick=e=>{ if(e.target===ov){ov.remove();cb(null);} };
 }
 
+// 드래그·이동 메뉴 공통: 반복 일정(첫 회차 포함)이면 '이 회차만/전체'를 물어본 뒤 이동
+// 첫 회차는 반복 인스턴스가 아니라 저장 원본으로 표시되므로, 원본일을 회차 날짜로 취급
+function moveTaskOrAsk(dk, taskId, isRepeat, instanceDk, toDk){
+  const t=(tasks[dk]||[]).find(x=>x.id===taskId);
+  const isSeries=isRepeat || !!(t && t.repeat && t.repeat!=='none');
+  if(!isSeries){ moveTask(dk, taskId, toDk); return; }
+  const inst=isRepeat ? instanceDk : dk;
+  if(inst===toDk) return;
+  askRepeatMoveScope(scope=>{
+    if(scope==='one') moveRepeatInstanceOne(dk, taskId, inst, toDk);
+    else if(scope==='all') moveTask(dk, taskId, toDk);
+  });
+}
+
 let activeMovePopup=null;
 function closeMovePopup(){ if(activeMovePopup){activeMovePopup.remove();activeMovePopup=null;} }
 
@@ -1402,14 +1418,8 @@ function openMovePopup(anchor, fromDk, taskId, repCtx){
   // 이동 확정 — 반복 인스턴스면 '이 회차만/전체'를 물어본 뒤 실행
   const commit=(toDk)=>{
     closeMovePopup();
-    if(repCtx&&repCtx.isRepeatInst){
-      askRepeatMoveScope(scope=>{
-        if(scope==='one') moveRepeatInstanceOne(repCtx.originDk, taskId, repCtx.instanceDk, toDk);
-        else if(scope==='all') moveTask(repCtx.originDk, taskId, toDk);
-      });
-    } else {
-      moveTask(fromDk, taskId, toDk);
-    }
+    if(repCtx&&repCtx.isRepeatInst) moveTaskOrAsk(repCtx.originDk, taskId, true, repCtx.instanceDk, toDk);
+    else moveTaskOrAsk(fromDk, taskId, false, null, toDk);
   };
 
   const opts=[
@@ -2354,13 +2364,7 @@ function buildTaskItem(dk,task,isSub,parentId,isRepeatInst,originDk,instanceDk,a
           const data=JSON.parse(e.dataTransfer.getData('application/json'));
           if(!data||!data.id||data.id===task.id)return;
           if(data.dk===dk&&!data.isRepeat){reorderTask(dk,data.id,task.id);}
-          else if(data.isRepeat){
-            askRepeatMoveScope(scope=>{
-              if(scope==='one') moveRepeatInstanceOne(data.dk, data.id, data.instanceDk, dk);
-              else if(scope==='all') moveTask(data.dk, data.id, dk);
-            });
-          }
-          else{ moveTask(data.dk,data.id,dk); }
+          else moveTaskOrAsk(data.dk, data.id, data.isRepeat, data.instanceDk, dk);
         }catch(err){}
       };
     }
@@ -2737,12 +2741,7 @@ function buildDayCol(date,dayIdx){
     try{
       const data=JSON.parse(e.dataTransfer.getData('application/json'));
       if(!data||!data.dk||!data.id||data.dk===dk) return;
-      if(data.isRepeat){
-        askRepeatMoveScope(scope=>{
-          if(scope==='one') moveRepeatInstanceOne(data.dk, data.id, data.instanceDk, dk);
-          else if(scope==='all') moveTask(data.dk, data.id, dk);
-        });
-      } else { moveTask(data.dk,data.id,dk); }
+      moveTaskOrAsk(data.dk, data.id, data.isRepeat, data.instanceDk, dk);
     }catch(err){}
   };
   // header
@@ -3600,14 +3599,7 @@ function _weekNavDrop(e, weekDelta){
   if(!srcDk) return;
   const d=parseDk(srcDk); d.setDate(d.getDate() + weekDelta*7);
   const toDk=dateKey(d);
-  if(data.isRepeat){
-    askRepeatMoveScope(scope=>{
-      if(scope==='one') moveRepeatInstanceOne(data.dk, data.id, data.instanceDk, toDk);
-      else if(scope==='all') moveTask(data.dk, data.id, toDk);
-    });
-  } else {
-    moveTask(data.dk, data.id, toDk);
-  }
+  moveTaskOrAsk(data.dk, data.id, data.isRepeat, data.instanceDk, toDk);
 }
 ['prevBtn','nextBtn'].forEach(id=>{
   const b=document.getElementById(id); if(!b) return;
